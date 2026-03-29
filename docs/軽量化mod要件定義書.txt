@@ -1,0 +1,397 @@
+要件定義書
+
+仮称: PackCache
+対象: Minecraft 1.21.1 / NeoForge 系クライアント、ATM10級大型 modpack
+版: v0.1（初版）
+
+1. 目的
+
+本 mod は、大規模 modpack における以下の体験上のボトルネックを改善することを目的とする。
+
+起動時間が長い
+リソースパック反映や再読み込みが重い
+ワールド初回参加時の待機時間・直後の固まりが大きい
+プレイ開始後もしばらく重さが残る
+
+本 mod は、これらを 安全な中間成果物の永続キャッシュ と 初期化処理の段階化 によって改善する。
+
+2. 背景と問題定義
+
+NeoForge の resources は大きく assets と data に分かれ、mod 側 resources は Mod resources pack として統合され、その上に優先度の高い resource pack が重なります。したがって、mod 構成・pack 順序・対象ファイル群が同一であれば、再利用可能な中間成果物が多く存在します。
+
+また Loading Profiler の説明では、resource reload は並列タスクとして処理される一方、ModelManager が最も遅いタスクになりやすく、Reading jsons、Parsing jsons、Resolving hierarchy、Baking models、Assigning models to block などの段階に分かれます。つまり、最適化対象は「起動全体」ではなく、特に resource reload と model pipeline の中間段階 に集中しています。
+
+3. 製品方針
+3.1 基本方針
+
+v1 は client-first とする。
+サーバー必須化は行わず、単体クライアント導入で効果を出す。
+
+3.2 差別化方針
+
+本 mod は以下を主戦場とする。
+
+pack stack を前提にした永続キャッシュ
+resource reload の増分化
+world entry 時の段階的初期化
+互換性を壊しにくい限定最適化
+3.3 非採用方針
+
+v1 では以下を主目的にしない。
+
+classloader / mixin / registry 初期化の全面置換
+既存最適化 mod の代替実装
+サーバー専用の chunkgen / network / tick 最適化
+live な BakedModel / GPU upload 結果の永続化
+任意 mod の runtime 内部ロジックへの広範な monkey patch
+4. 対象範囲
+4.1 スコープ内
+クライアント起動後半の resource reload 高速化
+リソースパック切替・再読み込み高速化
+ワールド初回参加高速化
+キャッシュ整合性管理
+互換性維持のための kill switch / quarantine
+ベンチマーク、統計、診断出力
+4.2 スコープ外
+dedicated server 単体最適化
+worldgen / chunk I/O / entity tick の直接最適化
+GPU オブジェクトの永続キャッシュ
+レジストリ本体や live game object の永続化
+他 mod への強制的な遅延初期化
+5. 成果物の定義
+
+本プロダクトは、少なくとも以下 2 モジュールで構成される。
+
+packcache-core
+packcache-client
+
+将来的に以下を拡張候補とする。
+
+packcache-server-helper
+packcache-runtime-lite
+6. 用語定義
+Cold Path: 対象 fingerprint に対応するキャッシュが存在しない状態での起動または reload
+Warm Path: 対象 fingerprint に対応する有効なキャッシュが存在する状態での起動または reload
+Pack Fingerprint: 現在の pack 構成を一意に識別するための署名
+Pure Intermediate: live object ではない、中間表現のみから成る再利用可能データ
+Stage Init: 起動直後・world join 直後に不要な処理を後ろへ送る仕組み
+7. 想定利用者
+ATM10級パックを遊ぶプレイヤー
+自作大型 modpack の作者
+読み込み時間の計測・分析をしたい modpack メンテナー
+互換性を維持したまま高速化したいクライアントユーザー
+8. システム概要
+
+NeoForge には custom model loader と client reload listener の導線があり、モデル系のキャッシュはそのフックに沿って差し込むのが自然です。モデルローダー側でキャッシュデータを持つ場合に AddClientReloadListenersEvent を使う導線も示されています。
+
+9. 機能要件
+FR-001 Pack Fingerprint 生成
+
+優先度: MUST
+
+システムは以下から fingerprint を生成しなければならない。
+
+Minecraft version
+NeoForge version
+読み込まれている mod 一覧
+各 mod jar の識別子（少なくとも version + file hash）
+有効 resource pack 一覧
+resource pack の順序
+pack 内 relevant file の hash
+キャッシュ結果に影響する本 mod の設定値
+FR-002 キャッシュストア
+
+優先度: MUST
+
+システムは versioned cache store を提供しなければならない。
+各キャッシュエントリは以下を持つこと。
+
+schema version
+fingerprint 参照
+entry type
+checksum
+作成時刻
+最終使用時刻
+サイズ
+integrity state
+FR-003 Resource Index Cache
+
+優先度: MUST
+
+システムは resource pack / mod resources 上の assets 配下について、以下を永続化しなければならない。
+
+namespace index
+path index
+file existence map
+negative lookup cache
+FR-004 Model JSON Parse Cache
+
+優先度: MUST
+
+システムは model JSON を parse した中間表現を永続化しなければならない。
+保存対象は pure intermediate に限定し、live object を保存してはならない。
+
+FR-005 Parent Resolution Cache
+
+優先度: MUST
+
+システムは model parent 解決後の graph/DAG を永続化しなければならない。
+
+FR-006 Blockstate Variant Expansion Cache
+
+優先度: MUST
+
+システムは blockstate JSON の variant / multipart 展開結果を永続化しなければならない。
+
+FR-007 Atlas Plan Cache
+
+優先度: SHOULD
+
+システムは texture atlas そのものではなく、atlas source と texture dependency plan のみを永続化してよい。
+GPU upload 結果を永続化してはならない。
+
+FR-008 Reload Pipeline 統合
+
+優先度: MUST
+
+システムは client-side resource reload に統合され、Warm Path ではキャッシュ済み中間成果物を再利用しなければならない。
+Cold Path では通常処理を行い、完了後に安全な範囲のみキャッシュしなければならない。
+
+FR-009 キャッシュ無効化
+
+優先度: MUST
+
+システムは以下の変化を検知した場合、影響範囲のキャッシュを無効化しなければならない。
+
+mod jar 更新
+resource pack 追加・削除・順序変更
+relevant file 内容変更
+schema version 更新
+本 mod の互換性設定変更
+FR-010 整合性チェック
+
+優先度: MUST
+
+キャッシュ読込時に checksum / schema / fingerprint を検証し、不整合時はそのエントリのみ破棄して通常処理へフォールバックしなければならない。
+
+FR-011 World Entry Stager
+
+優先度: SHOULD
+
+システムは world join 後に即時必須でないクライアント処理を遅延実行できる仕組みを提供しなければならない。
+v1 では自前 integration と限定的な opt-in API のみ対象とする。
+
+FR-012 互換性キルスイッチ
+
+優先度: MUST
+
+システムは以下の単位で feature を無効化できなければならない。
+
+global
+module
+per-integration
+per-target-mod
+FR-013 障害隔離
+
+優先度: MUST
+
+特定 integration または特定 cache entry で例外が発生した場合、システム全体を停止させず、その箇所のみ quarantine して継続動作しなければならない。
+
+FR-014 統計・診断
+
+優先度: MUST
+
+システムは以下を出力しなければならない。
+
+cache hit / miss
+invalidation reason
+stage 別所要時間
+main thread / off-thread 比率
+warm / cold 判定
+cache 使用量
+quarantine 状態
+FR-015 設定インターフェース
+
+優先度: MUST
+
+利用者は設定ファイルまたは in-game config から以下を変更できなければならない。
+
+各 cache module の有効/無効
+cache 上限容量
+eviction policy
+debug logging
+compatibility mode
+world-entry staging の強度
+FR-016 キャッシュ管理コマンド
+
+優先度: SHOULD
+
+以下の操作を提供すること。
+
+cache 状態確認
+purge
+rebuild
+fingerprint 表示
+benchmark 用ログ出力
+FR-017 Runtime-Lite 最適化
+
+優先度: COULD
+
+プレイ中の軽量 lookup cache や hot-path memoization を導入してよい。
+ただし v1 では既定無効または allowlist 制とし、挙動変更を伴わない pure cache に限定する。
+
+10. 非機能要件
+NFR-001 安全性
+
+キャッシュ破損や互換性問題が発生しても、ゲームが起動不能になってはならない。
+少なくとも cache disabled fallback で継続起動できること。
+
+NFR-002 互換性
+
+本 mod は、既存の主要最適化 mod と共存することを前提とする。
+競合が検知された場合は feature を自動縮退させてもよい。
+
+NFR-003 正確性
+
+キャッシュ有効時と無効時で、サポート対象範囲では視覚結果・blockstate 対応・resource override 結果が一致しなければならない。
+
+NFR-004 性能
+
+Warm Path において、基準環境で明確な改善を示さなければならない。
+ただし Cold Path で著しい悪化を起こしてはならない。
+
+NFR-005 主スレッド負荷
+
+重い hash 計算、serialize/deserialize、index 生成は可能な限り off-thread で行う。
+main thread でのみ可能な処理は最小化する。
+
+NFR-006 保守性
+
+キャッシュモジュールは責務分離され、module 単位で independently disable 可能でなければならない。
+
+NFR-007 観測性
+
+診断ログと stage 計測が標準で利用できること。
+障害解析に必要な情報は再現性を持って出力されなければならない。
+
+NFR-008 ディスク管理
+
+キャッシュ容量上限を設定可能とし、既定では LRU もしくは同等の eviction を行う。
+
+NFR-009 ネットワーク非依存
+
+既定設定で外部通信を必要としてはならない。
+
+NFR-010 OSS 前提
+
+利用者が挙動を追跡しやすい構成、分離された設定、十分なログを提供する。
+
+11. 技術制約
+11.1 保存してよいもの
+resource index
+parsed JSON AST
+parent 解決済み graph
+blockstate 展開結果
+atlas planning metadata
+stage timing metadata
+11.2 保存してはならないもの
+live registry object
+BakedModel の live instance
+GPU upload 後のオブジェクト
+thread / executor / context に強く依存する実体
+11.3 理由
+
+Dynamic Resources 系の最適化は有効性が高い一方で、ModernFix 側でも model baking や resource 周りの互換性 issue が複数報告されています。また Mojang 側にも resource pack 読込フリーズ系の報告があります。そのため v1 は「純粋な中間表現のみ永続化し、live object は都度生成」に制約するのが妥当です。
+
+12. 受け入れ基準
+
+以下は 暫定受け入れ基準 とする。正式値は Phase 1 ベンチマーク完了後に固定する。
+
+AC-001 機能正当性
+
+サポート対象テストセットにおいて、cache on/off で描画結果と resource override 結果が一致すること。
+
+AC-002 Warm Startup
+
+同一環境・同一 pack・同一設定・n>=5 の中央値比較で、Warm Path の起動時間が baseline 比 15%以上短縮 されること。
+
+AC-003 Resource Reload
+
+resource reload 時間が baseline 比 20%以上短縮 されること。
+
+AC-004 World Entry
+
+既存ワールド参加の time-to-first-controllable-frame が baseline 比 10%以上短縮 されること。
+また join 後 30 秒以内の >250ms main-thread stall 回数が 30%以上減少 すること。
+
+AC-005 Cold Path Regression
+
+Cold Path での悪化は baseline 比 5%以内 に抑えること。
+
+AC-006 Fallback
+
+キャッシュ破損・互換性例外発生時に、自動で対象 cache または対象 feature を無効化し、ゲーム継続が可能であること。
+
+AC-007 Isolation
+
+ある integration の障害が他モジュールへ波及しないこと。
+
+AC-008 Observability
+
+ログのみで、fingerprint、invalid reason、hit/miss、処理時間、quarantine 対象を追跡できること。
+
+13. ベンチマーク要件
+
+性能比較は以下の条件で行う。
+
+同一ハードウェア
+同一 Java 引数
+同一 modpack バージョン
+同一 resource pack 構成
+shader 無効
+各ケース n>=5 の中央値比較
+cold/warm を分離して測定
+
+測定ケースは少なくとも以下を含む。
+
+初回起動（cold）
+再起動（warm）
+resource reload
+新規ワールド作成
+既存ワールド参加
+ワールド参加後 30 秒の frame / stall 観測
+14. リスク
+
+最大リスクは モデル系互換性 です。
+特に mod 独自モデル、dynamic resource 的な差し替え、追加モデル登録、特殊レンダリング系との相性が不安定になりやすいです。したがって、v1 の設計原則は以下とする。
+
+pure intermediate のみを保存する
+feature flag を細かく切る
+integration ごとの quarantine を実装する
+問題の出やすい mod 群には allowlist / denylist を持てるようにする
+15. 開発フェーズ
+Phase 1: Profiling Foundation
+stage 計測基盤
+benchmark harness
+fingerprint 生成
+stats / log 出力
+Phase 2: Safe Cache Layer
+resource index cache
+negative lookup cache
+cache store / integrity / purge
+Phase 3: Model Pipeline Cache
+model parse cache
+parent resolution cache
+blockstate expansion cache
+atlas plan cache
+Phase 4: World Entry Staging
+delayed init API
+limited integrations
+post-join stall 低減
+Phase 5: Optional Extensions
+server helper
+runtime-lite
+pack author 向け prewarm 支援
+16. この要件定義の一文要約
+
+PackCache は、ATM10級大型 modpack 向けに、NeoForge の resource/model 読み込み境界へ pack-aware な永続キャッシュと段階的初期化を差し込み、起動・resource reload・world entry を高速化する client-first 基盤 mod である。
