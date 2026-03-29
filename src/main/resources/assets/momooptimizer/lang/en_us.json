@@ -1,0 +1,13 @@
+{
+  "itemGroup.momooptimizer": "Example Mod Tab",
+  "block.momooptimizer.example_block": "Example Block",
+  "item.momooptimizer.example_item": "Example Item",
+
+  "momooptimizer.configuration.title": "momo_optimizer Configs",
+  "momooptimizer.configuration.section.momooptimizer.common.toml": "momo_optimizer Configs",
+  "momooptimizer.configuration.section.momooptimizer.common.toml.title": "momo_optimizer Configs",
+  "momooptimizer.configuration.items": "Item List",
+  "momooptimizer.configuration.logDirtBlock": "Log Dirt Block",
+  "momooptimizer.configuration.magicNumberIntroduction": "Magic Number Text",
+  "momooptimizer.configuration.magicNumber": "Magic Number"
+}
