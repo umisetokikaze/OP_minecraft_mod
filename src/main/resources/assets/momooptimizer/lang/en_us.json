@@ -1,13 +1,17 @@
 {
-  "itemGroup.momooptimizer": "Example Mod Tab",
-  "block.momooptimizer.example_block": "Example Block",
-  "item.momooptimizer.example_item": "Example Item",
-
   "momooptimizer.configuration.title": "momo_optimizer Configs",
   "momooptimizer.configuration.section.momooptimizer.common.toml": "momo_optimizer Configs",
   "momooptimizer.configuration.section.momooptimizer.common.toml.title": "momo_optimizer Configs",
-  "momooptimizer.configuration.items": "Item List",
-  "momooptimizer.configuration.logDirtBlock": "Log Dirt Block",
-  "momooptimizer.configuration.magicNumberIntroduction": "Magic Number Text",
-  "momooptimizer.configuration.magicNumber": "Magic Number"
+  "momooptimizer.configuration.foundation.enabled": "Enable Profiling Foundation",
+  "momooptimizer.configuration.foundation.packFingerprint.enabled": "Enable Pack Fingerprint",
+  "momooptimizer.configuration.foundation.stageProfiling.enabled": "Enable Stage Profiling",
+  "momooptimizer.configuration.foundation.benchmark.enabled": "Enable Benchmark Harness",
+  "momooptimizer.configuration.foundation.diagnostics.writeJson": "Write Diagnostics JSON",
+  "momooptimizer.configuration.foundation.logging.debug": "Enable Debug Logging",
+  "momooptimizer.configuration.cache.maxMiB": "Cache Budget (MiB)",
+  "momooptimizer.configuration.cache.evictionPolicy": "Eviction Policy",
+  "momooptimizer.configuration.compatibility.mode": "Compatibility Mode",
+  "momooptimizer.configuration.worldEntry.stagingIntensity": "World Entry Staging Intensity",
+  "momooptimizer.configuration.worldEntry.observationTicks": "World Entry Observation Ticks",
+  "momooptimizer.configuration.benchmark.stallThresholdMs": "Stall Threshold (ms)"
 }
