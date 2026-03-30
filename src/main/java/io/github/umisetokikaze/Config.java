@@ -1,7 +1,7 @@
 package io.github.umisetokikaze;
 
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -38,5 +38,14 @@ public class Config {
 
     private static boolean validateItemName(final Object obj) {
         return obj instanceof String itemName && BuiltInRegistries.ITEM.containsKey(Identifier.parse(itemName));
+    }
+
+    public static Map<String, String> toFingerprintSettings() {
+        Map<String, String> settings = new java.util.LinkedHashMap<>();
+        settings.put("logDirtBlock", Boolean.toString(LOG_DIRT_BLOCK.get()));
+        settings.put("magicNumber", Integer.toString(MAGIC_NUMBER.get()));
+        settings.put("magicNumberIntroduction", MAGIC_NUMBER_INTRODUCTION.get());
+        settings.put("items", ITEM_STRINGS.get().stream().map(String::valueOf).collect(Collectors.joining(",")));
+        return Map.copyOf(settings);
     }
 }
