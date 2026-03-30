@@ -19,6 +19,10 @@ final class BenchmarkHarness {
     private final Path rootDirectory;
     private final Path benchmarkFile;
     private final Path diagnosticsFile;
+    private final BenchmarkRunDescriptor runDescriptor = BenchmarkRunDescriptor.fromSystemProperties();
+    private boolean benchmarkRunStarted;
+    private boolean benchmarkRunFinished;
+    private Double pendingWorldJoinTtfcfMillis;
 
     BenchmarkHarness(Path rootDirectory) {
         this.rootDirectory = rootDirectory;
@@ -45,10 +49,23 @@ final class BenchmarkHarness {
 
     void recordResourceReloadSession(StageProfiler.SessionSummary summary) {
         appendEvent("resource_reload_session", summary.toJson());
+        if (matchesCase(BenchmarkCaseId.RESOURCE_RELOAD)) {
+            BenchmarkRunMetrics metrics = new BenchmarkRunMetrics()
+                    .withResourceReloadMillis(summary.totalMillis());
+            finishBenchmarkRun(metrics);
+        }
     }
 
     void recordWorldJoinSession(StageProfiler.SessionSummary summary) {
         appendEvent("world_join_session", summary.toJson());
+        if (matchesCase(BenchmarkCaseId.WORLD_JOIN_EXISTING)) {
+            BenchmarkRunMetrics metrics = new BenchmarkRunMetrics()
+                    .withWorldJoinTtfcfMillis(pendingWorldJoinTtfcfMillis == null ? 0.0D : pendingWorldJoinTtfcfMillis)
+                    .withWorldJoinObservedTicks(summary.extra().get("observedTicks").getAsInt())
+                    .withWorldJoin30sStallCount(summary.extra().get("stallCount").getAsInt())
+                    .withWorldJoin30sMaxFrameMillis(summary.extra().get("maxFrameDeltaMillis").getAsDouble());
+            finishBenchmarkRun(metrics);
+        }
     }
 
     void recordSnapshot(PackFingerprintSnapshot fingerprintSnapshot, JsonObject statsSnapshot) {
@@ -74,6 +91,54 @@ final class BenchmarkHarness {
         payload.addProperty("namespaceCount", namespaceCount);
         payload.addProperty("durationMillis", durationNanos / 1_000_000.0D);
         appendEvent("resource_reload", payload);
+    }
+
+    void beginBenchmarkRun(PackFingerprintSnapshot snapshot) {
+        if (runDescriptor == null || benchmarkRunStarted) {
+            return;
+        }
+        benchmarkRunStarted = true;
+        JsonObject payload = runDescriptor.toJson(snapshot);
+        payload.addProperty("runId", sessionId);
+        payload.addProperty("actualTemperature", snapshot.executionTemperature());
+        appendEvent("benchmark_run_start", payload);
+
+        if (runDescriptor.shaderEnabled()) {
+            invalidateBenchmarkRun("shader-enabled");
+            return;
+        }
+        if (!runDescriptor.expectedTemperature().equals(snapshot.executionTemperature())) {
+            JsonObject invalidation = runDescriptor.toJson(snapshot);
+            invalidation.addProperty("runId", sessionId);
+            invalidation.addProperty("reason", "temperature-mismatch");
+            invalidation.addProperty("actualTemperature", snapshot.executionTemperature());
+            appendEvent("benchmark_run_invalidated", invalidation);
+            benchmarkRunFinished = true;
+        }
+    }
+
+    void finishStartupBenchmark(long durationNanos) {
+        if (!matchesCase(BenchmarkCaseId.STARTUP_COLD) && !matchesCase(BenchmarkCaseId.STARTUP_WARM)) {
+            return;
+        }
+        BenchmarkRunMetrics metrics = new BenchmarkRunMetrics()
+                .withStartupMillis(durationNanos / 1_000_000.0D);
+        finishBenchmarkRun(metrics);
+    }
+
+    void noteWorldJoinTtfcf(long durationNanos) {
+        pendingWorldJoinTtfcfMillis = durationNanos / 1_000_000.0D;
+    }
+
+    BenchmarkCaseId benchmarkCaseId() {
+        return runDescriptor == null ? null : runDescriptor.caseId();
+    }
+
+    void finishStartupBenchmarkFromNow() {
+        if (runDescriptor == null) {
+            return;
+        }
+        finishStartupBenchmark(System.nanoTime() - runDescriptor.createdAtNanos());
     }
 
     private synchronized void appendEvent(String eventType, JsonObject payload) {
@@ -117,5 +182,39 @@ final class BenchmarkHarness {
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to create foundation output directory " + rootDirectory, exception);
         }
+    }
+
+    private boolean matchesCase(BenchmarkCaseId caseId) {
+        return runDescriptor != null
+                && runDescriptor.caseId() == caseId
+                && benchmarkRunStarted
+                && !benchmarkRunFinished;
+    }
+
+    private void finishBenchmarkRun(BenchmarkRunMetrics metrics) {
+        if (runDescriptor == null || !benchmarkRunStarted || benchmarkRunFinished) {
+            return;
+        }
+        benchmarkRunFinished = true;
+        JsonObject payload = metrics.toJson();
+        payload.addProperty("runId", sessionId);
+        payload.addProperty("caseId", runDescriptor.caseId().value());
+        payload.addProperty("variant", runDescriptor.variant());
+        payload.addProperty("runIndex", runDescriptor.runIndex());
+        appendEvent("benchmark_run_finish", payload);
+    }
+
+    private void invalidateBenchmarkRun(String reason) {
+        if (runDescriptor == null || benchmarkRunFinished) {
+            return;
+        }
+        benchmarkRunFinished = true;
+        JsonObject payload = new JsonObject();
+        payload.addProperty("runId", sessionId);
+        payload.addProperty("caseId", runDescriptor.caseId().value());
+        payload.addProperty("variant", runDescriptor.variant());
+        payload.addProperty("runIndex", runDescriptor.runIndex());
+        payload.addProperty("reason", reason);
+        appendEvent("benchmark_run_invalidated", payload);
     }
 }

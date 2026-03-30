@@ -30,6 +30,18 @@ repositories {
     // Add here additional repositories if required by some of the dependencies below.
 }
 
+def benchmarkProperty = { String propertyName, String envName ->
+    def fromGradle = project.findProperty(propertyName)
+    if (fromGradle != null && fromGradle.toString().trim()) {
+        return fromGradle.toString()
+    }
+    def fromEnv = System.getenv(envName)
+    if (fromEnv != null && fromEnv.toString().trim()) {
+        return fromEnv.toString()
+    }
+    return null
+}
+
 base {
     archivesName = mod_id
 }
@@ -91,6 +103,25 @@ neoForge {
             // You can set various levels here.
             // Please read: https://stackoverflow.com/questions/2031163/when-to-use-the-different-log-levels
             logLevel = org.slf4j.event.Level.DEBUG
+
+            def benchmarkGameDir = benchmarkProperty('momoBenchmarkGameDir', 'MOMO_BENCHMARK_GAME_DIR')
+            if (benchmarkGameDir != null) {
+                gameDirectory = project.file(benchmarkGameDir)
+            }
+
+            [
+                    [gradle: 'momoBenchmarkCaseId', env: 'MOMO_BENCHMARK_CASE_ID', system: 'momooptimizer.benchmark.caseId'],
+                    [gradle: 'momoBenchmarkVariant', env: 'MOMO_BENCHMARK_VARIANT', system: 'momooptimizer.benchmark.variant'],
+                    [gradle: 'momoBenchmarkRunIndex', env: 'MOMO_BENCHMARK_RUN_INDEX', system: 'momooptimizer.benchmark.runIndex'],
+                    [gradle: 'momoBenchmarkTemperature', env: 'MOMO_BENCHMARK_TEMPERATURE', system: 'momooptimizer.benchmark.temperature'],
+                    [gradle: 'momoBenchmarkWorldId', env: 'MOMO_BENCHMARK_WORLD_ID', system: 'momooptimizer.benchmark.worldId'],
+                    [gradle: 'momoBenchmarkShaderEnabled', env: 'MOMO_BENCHMARK_SHADER_ENABLED', system: 'momooptimizer.benchmark.shaderEnabled'],
+            ].each { binding ->
+                def value = benchmarkProperty(binding.gradle, binding.env)
+                if (value != null) {
+                    systemProperty binding.system, value
+                }
+            }
         }
     }
 
