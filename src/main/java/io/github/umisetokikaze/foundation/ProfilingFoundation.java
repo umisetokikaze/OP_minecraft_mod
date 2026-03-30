@@ -3,12 +3,16 @@ package io.github.umisetokikaze.foundation;
 import com.google.gson.JsonObject;
 import io.github.umisetokikaze.Config;
 import io.github.umisetokikaze.momooptimizer;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.stream.Stream;
 
 public final class ProfilingFoundation {
     private static final ProfilingFoundation INSTANCE = new ProfilingFoundation();
     private static final StageHandle NOOP_HANDLE = () -> {
     };
+    private static final String PACK_MARKER_MODULE = "foundation.pack_fingerprint.marker";
 
     private final Path rootDirectory = Path.of("run", momooptimizer.MODID, "foundation");
     private final FoundationStats stats = new FoundationStats();
@@ -97,12 +101,26 @@ public final class ProfilingFoundation {
     }
 
     public PackFingerprintService createFingerprintService() {
-        return new PackFingerprintService(profiler, stats, rootDirectory.resolve("fingerprints"));
+        return new PackFingerprintService(this, profiler, rootDirectory.resolve("fingerprints"));
     }
 
     public PackFingerprintSnapshot updateFingerprint(PackFingerprintSnapshot snapshot) {
         this.currentFingerprint = snapshot;
+        stats.setWarmColdState(snapshot.executionTemperature());
+        recordCacheResult(snapshot, PACK_MARKER_MODULE, "warm".equals(snapshot.executionTemperature()), snapshotMarkerReason(snapshot), "");
+        recordCacheUsage(
+                snapshot,
+                PACK_MARKER_MODULE,
+                measureDirectory(rootDirectory.resolve("fingerprints")),
+                countDirectoryEntries(rootDirectory.resolve("fingerprints")),
+                Config.CACHE_MAX_MIB.get());
         createFingerprintService().persistMarker(snapshot);
+        recordCacheUsage(
+                snapshot,
+                PACK_MARKER_MODULE,
+                measureDirectory(rootDirectory.resolve("fingerprints")),
+                countDirectoryEntries(rootDirectory.resolve("fingerprints")),
+                Config.CACHE_MAX_MIB.get());
         emitDiagnostics();
         return snapshot;
     }
@@ -117,8 +135,106 @@ public final class ProfilingFoundation {
         emitDiagnostics();
     }
 
-    public void quarantine(String module, String reason) {
-        stats.quarantine(module, reason);
+    public void recordCacheResult(String module, boolean hit, String reasonCode, String detail) {
+        recordCacheResult(currentFingerprint, module, hit, reasonCode, detail);
+    }
+
+    public void recordCacheResult(
+            PackFingerprintSnapshot fingerprintSnapshot,
+            String module,
+            boolean hit,
+            String reasonCode,
+            String detail) {
+        stats.recordCacheResult(module, hit, reasonCode, detail);
+        benchmarkHarness.recordCacheResult(fingerprintSnapshot, module, hit, reasonCode, detail);
+        momooptimizer.LOGGER.info(
+                "Foundation cache_result module={} fingerprint={} warmCold={} outcome={} reasonCode={} detail={}",
+                module,
+                fingerprintValue(fingerprintSnapshot),
+                warmColdValue(fingerprintSnapshot),
+                hit ? "hit" : "miss",
+                reasonCode,
+                safeDetail(detail));
+    }
+
+    public void recordInvalidation(String module, String reasonCode, String detail) {
+        recordInvalidation(currentFingerprint, module, reasonCode, detail);
+    }
+
+    public void recordInvalidation(
+            PackFingerprintSnapshot fingerprintSnapshot,
+            String module,
+            String reasonCode,
+            String detail) {
+        stats.recordInvalidation(module, reasonCode, detail);
+        benchmarkHarness.recordInvalidation(fingerprintSnapshot, module, reasonCode, detail);
+        momooptimizer.LOGGER.info(
+                "Foundation invalidation module={} fingerprint={} warmCold={} reasonCode={} detail={}",
+                module,
+                fingerprintValue(fingerprintSnapshot),
+                warmColdValue(fingerprintSnapshot),
+                reasonCode,
+                safeDetail(detail));
+        emitDiagnostics();
+    }
+
+    public void recordCacheUsage(String module, long bytesUsed, long entryCount, long budgetMiB) {
+        recordCacheUsage(currentFingerprint, module, bytesUsed, entryCount, budgetMiB);
+    }
+
+    public void recordCacheUsage(
+            PackFingerprintSnapshot fingerprintSnapshot,
+            String module,
+            long bytesUsed,
+            long entryCount,
+            long budgetMiB) {
+        stats.recordCacheUsage(module, bytesUsed, entryCount, budgetMiB);
+        benchmarkHarness.recordCacheUsage(fingerprintSnapshot, module, bytesUsed, entryCount, budgetMiB);
+        momooptimizer.LOGGER.info(
+                "Foundation cache_usage module={} fingerprint={} warmCold={} bytesUsed={} entryCount={} budgetMiB={}",
+                module,
+                fingerprintValue(fingerprintSnapshot),
+                warmColdValue(fingerprintSnapshot),
+                bytesUsed,
+                entryCount,
+                budgetMiB);
+    }
+
+    public void quarantine(String module, String reasonCode) {
+        quarantine(module, reasonCode, "");
+    }
+
+    public void quarantine(String module, String reasonCode, String detail) {
+        quarantine(currentFingerprint, module, reasonCode, detail);
+    }
+
+    public void quarantine(
+            PackFingerprintSnapshot fingerprintSnapshot,
+            String module,
+            String reasonCode,
+            String detail) {
+        stats.quarantine(module, reasonCode, detail);
+        benchmarkHarness.recordQuarantine(fingerprintSnapshot, module, true, reasonCode, detail);
+        momooptimizer.LOGGER.info(
+                "Foundation quarantine module={} fingerprint={} warmCold={} active=true reasonCode={} detail={}",
+                module,
+                fingerprintValue(fingerprintSnapshot),
+                warmColdValue(fingerprintSnapshot),
+                reasonCode,
+                safeDetail(detail));
+        emitDiagnostics();
+    }
+
+    public void clearQuarantine(String module, String reasonCode, String detail) {
+        stats.clearQuarantine(module, reasonCode, detail);
+        benchmarkHarness.recordQuarantine(currentFingerprint, module, false, reasonCode, detail);
+        momooptimizer.LOGGER.info(
+                "Foundation quarantine module={} fingerprint={} warmCold={} active=false reasonCode={} detail={}",
+                module,
+                fingerprintValue(currentFingerprint),
+                warmColdValue(currentFingerprint),
+                reasonCode,
+                safeDetail(detail));
         emitDiagnostics();
     }
 
@@ -130,10 +246,68 @@ public final class ProfilingFoundation {
         JsonObject statsJson = stats.toJson();
         benchmarkHarness.recordSnapshot(snapshot, statsJson);
         momooptimizer.LOGGER.info(
-                "Foundation snapshot fingerprint={} warmCold={} stageCount={} quarantineCount={}",
+                "Foundation snapshot fingerprint={} warmCold={} stageCount={} cacheModuleCount={} quarantinedModuleCount={}",
                 snapshot.fingerprint(),
                 snapshot.executionTemperature(),
                 statsJson.getAsJsonArray("stages").size(),
-                statsJson.getAsJsonArray("quarantine").size());
+                statsJson.getAsJsonArray("cacheResults").size(),
+                activeQuarantineCount(statsJson));
+    }
+
+    private String snapshotMarkerReason(PackFingerprintSnapshot snapshot) {
+        return "warm".equals(snapshot.executionTemperature()) ? "HIT" : "MISS_NO_ENTRY";
+    }
+
+    private String fingerprintValue(PackFingerprintSnapshot snapshot) {
+        return snapshot != null ? snapshot.fingerprint() : "unavailable";
+    }
+
+    private String warmColdValue(PackFingerprintSnapshot snapshot) {
+        return snapshot != null ? snapshot.executionTemperature() : "unknown";
+    }
+
+    private String safeDetail(String detail) {
+        return detail == null ? "" : detail;
+    }
+
+    private int activeQuarantineCount(JsonObject statsJson) {
+        int active = 0;
+        for (var element : statsJson.getAsJsonArray("quarantine")) {
+            JsonObject state = element.getAsJsonObject().getAsJsonObject("state");
+            if (state != null && state.get("active").getAsBoolean()) {
+                active++;
+            }
+        }
+        return active;
+    }
+
+    private long measureDirectory(Path path) {
+        if (!Files.exists(path)) {
+            return 0L;
+        }
+        try (Stream<Path> stream = Files.walk(path)) {
+            return stream.filter(Files::isRegularFile)
+                    .mapToLong(file -> {
+                        try {
+                            return Files.size(file);
+                        } catch (IOException exception) {
+                            return 0L;
+                        }
+                    })
+                    .sum();
+        } catch (IOException exception) {
+            return 0L;
+        }
+    }
+
+    private long countDirectoryEntries(Path path) {
+        if (!Files.exists(path)) {
+            return 0L;
+        }
+        try (Stream<Path> stream = Files.walk(path)) {
+            return stream.filter(Files::isRegularFile).count();
+        } catch (IOException exception) {
+            return 0L;
+        }
     }
 }

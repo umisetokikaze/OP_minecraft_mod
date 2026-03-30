@@ -26,13 +26,13 @@ import net.minecraft.client.Minecraft;
 import net.neoforged.fml.ModList;
 
 public final class PackFingerprintService {
+    private final ProfilingFoundation foundation;
     private final StageProfiler profiler;
-    private final FoundationStats stats;
     private final Path fingerprintDirectory;
 
-    PackFingerprintService(StageProfiler profiler, FoundationStats stats, Path fingerprintDirectory) {
+    PackFingerprintService(ProfilingFoundation foundation, StageProfiler profiler, Path fingerprintDirectory) {
+        this.foundation = foundation;
         this.profiler = profiler;
-        this.stats = stats;
         this.fingerprintDirectory = fingerprintDirectory;
     }
 
@@ -68,8 +68,6 @@ public final class PackFingerprintService {
             String canonical = buildCanonicalInput(minecraftVersion, neoForgeVersion, mods, packs, configInputs);
             String fingerprint = sha256Hex(canonical.getBytes(StandardCharsets.UTF_8));
             boolean warm = Files.exists(fingerprintDirectory.resolve(fingerprint + ".json"));
-            stats.setWarmColdState(warm ? "warm" : "cold");
-            stats.recordCacheResult("foundation.pack_fingerprint.marker", warm, warm ? "marker-hit" : "marker-miss");
             return new PackFingerprintSnapshot(
                     fingerprint,
                     warm ? "warm" : "cold",
@@ -89,7 +87,8 @@ public final class PackFingerprintService {
                     snapshot.toJson().toString(),
                     StandardCharsets.UTF_8);
         } catch (IOException exception) {
-            stats.quarantine("foundation.pack_fingerprint", "marker-write-failed");
+            foundation.recordInvalidation(snapshot, "foundation.pack_fingerprint", "MARKER_WRITE_FAILED", exception.getClass().getSimpleName());
+            foundation.quarantine(snapshot, "foundation.pack_fingerprint", "IO_FAILURE", "marker-write-failed");
         }
     }
 
@@ -122,7 +121,8 @@ public final class PackFingerprintService {
         List<JsonObject> packs = new ArrayList<>();
         Object repository = getFieldValue(Minecraft.getInstance(), "packRepository").orElse(null);
         if (repository == null) {
-            stats.quarantine("foundation.pack_fingerprint.resource_packs", "pack-repository-unavailable");
+            foundation.recordInvalidation("foundation.pack_fingerprint.resource_packs", "PACK_REPOSITORY_UNAVAILABLE", "");
+            foundation.quarantine("foundation.pack_fingerprint.resource_packs", "INTEGRATION_FAILURE", "pack-repository-unavailable");
             return packs;
         }
 
