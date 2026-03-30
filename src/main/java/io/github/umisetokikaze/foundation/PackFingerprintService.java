@@ -44,7 +44,10 @@ public final class PackFingerprintService {
         String neoForgeVersion;
 
         try (StageProfiler.StageScope ignored = profiler.begin("foundation.fingerprint.minecraft_version")) {
-            minecraftVersion = SharedConstants.getCurrentVersion().getName();
+            Object currentVersion = SharedConstants.getCurrentVersion();
+            minecraftVersion = invokeNoArgString(currentVersion, "getName")
+                    .or(() -> invokeNoArgString(currentVersion, "getId"))
+                    .orElseGet(currentVersion::toString);
         }
 
         try (StageProfiler.StageScope ignored = profiler.begin("foundation.fingerprint.loaded_mods")) {

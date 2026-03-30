@@ -7,6 +7,8 @@ import java.nio.file.Path;
 
 public final class ProfilingFoundation {
     private static final ProfilingFoundation INSTANCE = new ProfilingFoundation();
+    private static final StageHandle NOOP_HANDLE = () -> {
+    };
 
     private final Path rootDirectory = Path.of("run", momooptimizer.MODID, "foundation");
     private final FoundationStats stats = new FoundationStats();
@@ -41,7 +43,57 @@ public final class ProfilingFoundation {
     }
 
     public StageHandle beginStage(String stageName) {
+        if (!Config.FOUNDATION_ENABLED.get() || !Config.STAGE_PROFILING_ENABLED.get()) {
+            return NOOP_HANDLE;
+        }
         return profiler.begin(stageName);
+    }
+
+    public StageHandle beginReloadSession() {
+        if (!Config.FOUNDATION_ENABLED.get() || !Config.STAGE_PROFILING_ENABLED.get()) {
+            return NOOP_HANDLE;
+        }
+        return profiler.beginSession("resource_reload", "foundation.client_reload.total");
+    }
+
+    public void finishReloadSession(StageHandle handle, int namespaceCount, long durationNanos) {
+        if (!(handle instanceof StageProfiler.SessionHandle sessionHandle)) {
+            return;
+        }
+
+        JsonObject extra = new JsonObject();
+        extra.addProperty("namespaceCount", namespaceCount);
+        extra.addProperty("durationMillis", durationNanos / 1_000_000.0D);
+        StageProfiler.SessionSummary summary = sessionHandle.closeWithExtra(extra);
+        if (summary != null) {
+            benchmarkHarness.recordResourceReloadSession(summary);
+        }
+    }
+
+    public StageHandle beginWorldJoinSession() {
+        if (!Config.FOUNDATION_ENABLED.get() || !Config.STAGE_PROFILING_ENABLED.get()) {
+            return NOOP_HANDLE;
+        }
+        return profiler.beginSession("world_join", "foundation.world_join.total");
+    }
+
+    public void finishWorldJoinSession(
+            StageHandle handle,
+            int observedTicks,
+            int stallCount,
+            long maxFrameDeltaNanos) {
+        if (!(handle instanceof StageProfiler.SessionHandle sessionHandle)) {
+            return;
+        }
+
+        JsonObject extra = new JsonObject();
+        extra.addProperty("observedTicks", observedTicks);
+        extra.addProperty("stallCount", stallCount);
+        extra.addProperty("maxFrameDeltaMillis", maxFrameDeltaNanos / 1_000_000.0D);
+        StageProfiler.SessionSummary summary = sessionHandle.closeWithExtra(extra);
+        if (summary != null) {
+            benchmarkHarness.recordWorldJoinSession(summary);
+        }
     }
 
     public PackFingerprintService createFingerprintService() {
