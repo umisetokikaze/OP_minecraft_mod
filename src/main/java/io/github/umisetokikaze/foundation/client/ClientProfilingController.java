@@ -3,6 +3,7 @@ package io.github.umisetokikaze.foundation.client;
 import io.github.umisetokikaze.Config;
 import io.github.umisetokikaze.foundation.PackFingerprintSnapshot;
 import io.github.umisetokikaze.foundation.ProfilingFoundation;
+import io.github.umisetokikaze.foundation.StageHandle;
 import io.github.umisetokikaze.momooptimizer;
 
 import net.minecraft.resources.Identifier;
@@ -22,6 +23,10 @@ public final class ClientProfilingController {
     private int stallCount;
     private long maxFrameDeltaNanos;
     private boolean observingWorldJoin;
+    private StageHandle worldJoinSession = () -> {
+    };
+    private StageHandle worldJoinWindow = () -> {
+    };
 
     public ClientProfilingController(IEventBus modEventBus) {
         modEventBus.addListener(this::onClientSetup);
@@ -58,6 +63,8 @@ public final class ClientProfilingController {
 
     @SubscribeEvent
     public void onPlayerLoggingIn(ClientPlayerNetworkEvent.LoggingIn event) {
+        worldJoinSession = foundation.beginWorldJoinSession();
+        worldJoinWindow = foundation.beginStage("foundation.world_join.window");
         observingWorldJoin = true;
         observedTicks = 0;
         stallCount = 0;
@@ -97,6 +104,12 @@ public final class ClientProfilingController {
             return;
         }
         observingWorldJoin = false;
+        worldJoinWindow.close();
         foundation.recordWorldJoinWindow(observedTicks, stallCount, maxFrameDeltaNanos);
+        foundation.finishWorldJoinSession(worldJoinSession, observedTicks, stallCount, maxFrameDeltaNanos);
+        worldJoinWindow = () -> {
+        };
+        worldJoinSession = () -> {
+        };
     }
 }

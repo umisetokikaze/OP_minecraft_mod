@@ -43,6 +43,14 @@ final class BenchmarkHarness {
         appendEvent("stage", payload);
     }
 
+    void recordResourceReloadSession(StageProfiler.SessionSummary summary) {
+        appendEvent("resource_reload_session", summary.toJson());
+    }
+
+    void recordWorldJoinSession(StageProfiler.SessionSummary summary) {
+        appendEvent("world_join_session", summary.toJson());
+    }
+
     void recordSnapshot(PackFingerprintSnapshot fingerprintSnapshot, JsonObject statsSnapshot) {
         JsonObject payload = new JsonObject();
         payload.add("fingerprint", fingerprintSnapshot.toJson());

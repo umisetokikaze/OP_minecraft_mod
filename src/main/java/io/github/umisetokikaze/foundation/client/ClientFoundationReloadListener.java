@@ -1,6 +1,7 @@
 package io.github.umisetokikaze.foundation.client;
 
 import io.github.umisetokikaze.foundation.ProfilingFoundation;
+import io.github.umisetokikaze.foundation.StageHandle;
 
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.SimplePreparableReloadListener;
@@ -8,6 +9,8 @@ import net.minecraft.util.profiling.ProfilerFiller;
 
 final class ClientFoundationReloadListener extends SimplePreparableReloadListener<ClientFoundationReloadListener.ReloadObservation> {
     private final ProfilingFoundation foundation;
+    private StageHandle reloadSession = () -> {
+    };
 
     ClientFoundationReloadListener(ProfilingFoundation foundation) {
         this.foundation = foundation;
@@ -15,6 +18,7 @@ final class ClientFoundationReloadListener extends SimplePreparableReloadListene
 
     @Override
     protected ReloadObservation prepare(ResourceManager resourceManager, ProfilerFiller profiler) {
+        reloadSession = foundation.beginReloadSession();
         try (var ignored = foundation.beginStage("foundation.client_reload.prepare")) {
             return new ReloadObservation(resourceManager.getNamespaces().size(), System.nanoTime());
         }
@@ -23,9 +27,14 @@ final class ClientFoundationReloadListener extends SimplePreparableReloadListene
     @Override
     protected void apply(ReloadObservation observation, ResourceManager resourceManager, ProfilerFiller profiler) {
         try (var ignored = foundation.beginStage("foundation.client_reload.apply")) {
-            foundation.recordReloadObservation(
+            long durationNanos = System.nanoTime() - observation.startedAtNanos();
+            foundation.recordReloadObservation(observation.namespaceCount(), durationNanos);
+            foundation.finishReloadSession(
+                    reloadSession,
                     observation.namespaceCount(),
-                    System.nanoTime() - observation.startedAtNanos());
+                    durationNanos);
+            reloadSession = () -> {
+            };
         }
     }
 
