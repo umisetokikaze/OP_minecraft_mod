@@ -211,6 +211,18 @@ final class StageProfiler {
             json.add("extra", extra.deepCopy());
             return json;
         }
+
+        double totalMillis() {
+            SessionStageAggregate totalStage = stages.get(totalStageName);
+            long totalNanos = totalStage != null
+                    ? totalStage.totalNanos()
+                    : stages.values().stream().mapToLong(SessionStageAggregate::totalNanos).max().orElse(0L);
+            return totalNanos / 1_000_000.0D;
+        }
+
+        JsonObject extra() {
+            return extra.deepCopy();
+        }
     }
 
     private static final class SessionState {

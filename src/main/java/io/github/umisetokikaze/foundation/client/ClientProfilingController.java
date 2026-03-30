@@ -6,6 +6,8 @@ import io.github.umisetokikaze.foundation.ProfilingFoundation;
 import io.github.umisetokikaze.foundation.StageHandle;
 import io.github.umisetokikaze.momooptimizer;
 
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.resources.Identifier;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -23,6 +25,9 @@ public final class ClientProfilingController {
     private int stallCount;
     private long maxFrameDeltaNanos;
     private boolean observingWorldJoin;
+    private boolean startupBenchmarkFinished;
+    private boolean worldJoinTtfcfRecorded;
+    private long worldJoinStartedAtNanos;
     private StageHandle worldJoinSession = () -> {
     };
     private StageHandle worldJoinWindow = () -> {
@@ -66,9 +71,11 @@ public final class ClientProfilingController {
         worldJoinSession = foundation.beginWorldJoinSession();
         worldJoinWindow = foundation.beginStage("foundation.world_join.window");
         observingWorldJoin = true;
+        worldJoinTtfcfRecorded = false;
         observedTicks = 0;
         stallCount = 0;
         maxFrameDeltaNanos = 0L;
+        worldJoinStartedAtNanos = System.nanoTime();
         lastTickNanos = System.nanoTime();
     }
 
@@ -79,8 +86,24 @@ public final class ClientProfilingController {
 
     @SubscribeEvent
     public void onClientTick(ClientTickEvent.Post event) {
+        if (!startupBenchmarkFinished
+                && (foundation.benchmarkCaseId() == io.github.umisetokikaze.foundation.BenchmarkCaseId.STARTUP_COLD
+                || foundation.benchmarkCaseId() == io.github.umisetokikaze.foundation.BenchmarkCaseId.STARTUP_WARM)) {
+            Minecraft minecraft = Minecraft.getInstance();
+            if (minecraft.screen instanceof TitleScreen) {
+                startupBenchmarkFinished = true;
+                foundation.finishStartupBenchmarkFromNow();
+            }
+        }
+
         if (!observingWorldJoin) {
             return;
+        }
+
+        Minecraft minecraft = Minecraft.getInstance();
+        if (!worldJoinTtfcfRecorded && minecraft.player != null && minecraft.level != null && minecraft.screen == null) {
+            worldJoinTtfcfRecorded = true;
+            foundation.noteWorldJoinTtfcf(System.nanoTime() - worldJoinStartedAtNanos);
         }
 
         long now = System.nanoTime();

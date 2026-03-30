@@ -97,11 +97,6 @@ public final class Config {
     }
 
     public static Map<String, String> toFingerprintSettings() {
-        Map<String, String> settings = new java.util.LinkedHashMap<>();
-        settings.put("logDirtBlock", Boolean.toString(LOG_DIRT_BLOCK.get()));
-        settings.put("magicNumber", Integer.toString(MAGIC_NUMBER.get()));
-        settings.put("magicNumberIntroduction", MAGIC_NUMBER_INTRODUCTION.get());
-        settings.put("items", ITEM_STRINGS.get().stream().map(String::valueOf).collect(Collectors.joining(",")));
-        return Map.copyOf(settings);
+        return Map.copyOf(fingerprintInputs());
     }
 }

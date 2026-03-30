@@ -4,13 +4,14 @@ import com.google.gson.JsonObject;
 import io.github.umisetokikaze.Config;
 import io.github.umisetokikaze.momooptimizer;
 import java.nio.file.Path;
+import net.neoforged.fml.loading.FMLPaths;
 
 public final class ProfilingFoundation {
     private static final ProfilingFoundation INSTANCE = new ProfilingFoundation();
     private static final StageHandle NOOP_HANDLE = () -> {
     };
 
-    private final Path rootDirectory = Path.of("run", momooptimizer.MODID, "foundation");
+    private final Path rootDirectory = FMLPaths.GAMEDIR.get().resolve(momooptimizer.MODID).resolve("foundation");
     private final FoundationStats stats = new FoundationStats();
     private final BenchmarkHarness benchmarkHarness = new BenchmarkHarness(rootDirectory.resolve("benchmark"));
     private final StageProfiler profiler = new StageProfiler(stats, benchmarkHarness);
@@ -103,6 +104,7 @@ public final class ProfilingFoundation {
     public PackFingerprintSnapshot updateFingerprint(PackFingerprintSnapshot snapshot) {
         this.currentFingerprint = snapshot;
         createFingerprintService().persistMarker(snapshot);
+        benchmarkHarness.beginBenchmarkRun(snapshot);
         emitDiagnostics();
         return snapshot;
     }
@@ -115,6 +117,22 @@ public final class ProfilingFoundation {
     public void recordWorldJoinWindow(int observedTicks, int stallCount, long maxFrameDeltaNanos) {
         benchmarkHarness.recordWorldJoinWindow(observedTicks, stallCount, maxFrameDeltaNanos);
         emitDiagnostics();
+    }
+
+    public void noteWorldJoinTtfcf(long durationNanos) {
+        benchmarkHarness.noteWorldJoinTtfcf(durationNanos);
+    }
+
+    public void finishStartupBenchmark(long durationNanos) {
+        benchmarkHarness.finishStartupBenchmark(durationNanos);
+    }
+
+    public void finishStartupBenchmarkFromNow() {
+        benchmarkHarness.finishStartupBenchmarkFromNow();
+    }
+
+    public BenchmarkCaseId benchmarkCaseId() {
+        return benchmarkHarness.benchmarkCaseId();
     }
 
     public void quarantine(String module, String reason) {
