@@ -1,25 +1,36 @@
+# momo_optimizer
 
-Installation information
-=======
+NeoForge-based Minecraft mod project for profiling and optimization-related tooling.
 
-This template repository can be directly cloned to get you started with a new
-mod. Simply create a new repository cloned from this one, by following the
-instructions provided by [GitHub](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template).
+## Development
 
-Once you have your clone, simply open the repository in the IDE of your choice. The usual recommendation for an IDE is either IntelliJ IDEA or Eclipse.
+If dependencies look out of sync in the IDE, run:
 
-If at any point you are missing libraries in your IDE, or you've run into problems you can
-run `gradlew --refresh-dependencies` to refresh the local cache. `gradlew clean` to reset everything 
-{this does not affect your code} and then start the process again.
+- `./gradlew --refresh-dependencies`
 
-Mapping Names:
-============
-By default, the MDK is configured to use the official mapping names from Mojang for methods and fields 
-in the Minecraft codebase. These names are covered by a specific license. All modders should be aware of this
-license. For the latest license text, refer to the mapping file itself, or the reference copy here:
-https://github.com/NeoForged/NeoForm/blob/main/Mojang.md
+To clear local build output, run:
 
-Additional Resources: 
-==========
-Community Documentation: https://docs.neoforged.net/  
-NeoForged Discord: https://discord.neoforged.net/
+- `./gradlew clean`
+
+## CI and test policy
+
+Pull requests are validated by GitHub Actions in two stages:
+
+- `./gradlew test`
+- `./gradlew assemble`
+
+`test` is the minimum quality gate for PRs, while `assemble` confirms the mod jar can still be produced. `check` is kept as the future entry point for broader verification, and `build` remains the local/pre-release all-in-one command.
+
+Detailed CI notes are documented in [docs/ci.md](docs/ci.md).
+
+## Useful commands
+
+- Run the JUnit suite: `./gradlew test`
+- Build the mod jar: `./gradlew assemble`
+- Run broader local verification: `./gradlew build`
+
+## References
+
+- Community Documentation: https://docs.neoforged.net/
+- NeoForged Discord: https://discord.neoforged.net/
+- Mojang mapping license reference: https://github.com/NeoForged/NeoForm/blob/main/Mojang.md
