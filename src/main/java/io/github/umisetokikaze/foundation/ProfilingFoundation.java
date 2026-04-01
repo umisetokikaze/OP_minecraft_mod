@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.stream.Stream;
+import net.neoforged.fml.loading.FMLPaths;
 
 public final class ProfilingFoundation {
     private static final ProfilingFoundation INSTANCE = new ProfilingFoundation();
@@ -14,7 +15,7 @@ public final class ProfilingFoundation {
     };
     private static final String PACK_MARKER_MODULE = "foundation.pack_fingerprint.marker";
 
-    private final Path rootDirectory = Path.of("run", momooptimizer.MODID, "foundation");
+    private final Path rootDirectory = FMLPaths.GAMEDIR.get().resolve(momooptimizer.MODID).resolve("foundation");
     private final FoundationStats stats = new FoundationStats();
     private final BenchmarkHarness benchmarkHarness = new BenchmarkHarness(rootDirectory.resolve("benchmark"));
     private final StageProfiler profiler = new StageProfiler(stats, benchmarkHarness);
@@ -115,12 +116,7 @@ public final class ProfilingFoundation {
                 countDirectoryEntries(rootDirectory.resolve("fingerprints")),
                 Config.CACHE_MAX_MIB.get());
         createFingerprintService().persistMarker(snapshot);
-        recordCacheUsage(
-                snapshot,
-                PACK_MARKER_MODULE,
-                measureDirectory(rootDirectory.resolve("fingerprints")),
-                countDirectoryEntries(rootDirectory.resolve("fingerprints")),
-                Config.CACHE_MAX_MIB.get());
+        benchmarkHarness.beginBenchmarkRun(snapshot);
         emitDiagnostics();
         return snapshot;
     }
@@ -198,6 +194,22 @@ public final class ProfilingFoundation {
                 bytesUsed,
                 entryCount,
                 budgetMiB);
+    }
+
+    public void noteWorldJoinTtfcf(long durationNanos) {
+        benchmarkHarness.noteWorldJoinTtfcf(durationNanos);
+    }
+
+    public void finishStartupBenchmark(long durationNanos) {
+        benchmarkHarness.finishStartupBenchmark(durationNanos);
+    }
+
+    public void finishStartupBenchmarkFromNow() {
+        benchmarkHarness.finishStartupBenchmarkFromNow();
+    }
+
+    public BenchmarkCaseId benchmarkCaseId() {
+        return benchmarkHarness.benchmarkCaseId();
     }
 
     public void quarantine(String module, String reasonCode) {
