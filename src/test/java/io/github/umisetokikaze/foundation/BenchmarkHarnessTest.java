@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -15,6 +16,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class BenchmarkHarnessTest {
     @TempDir
     Path tempDir;
+
+    @AfterEach
+    void clearProperties() {
+        for (String key : List.of(
+                "momooptimizer.benchmark.caseId",
+                "momooptimizer.benchmark.variant",
+                "momooptimizer.benchmark.runIndex",
+                "momooptimizer.benchmark.temperature",
+                "momooptimizer.benchmark.worldId",
+                "momooptimizer.benchmark.shaderEnabled"
+        )) {
+            System.clearProperty(key);
+        }
+    }
 
     @Test
     void writesStructuredDiagnosticEventsToJsonl() throws Exception {
@@ -76,5 +91,53 @@ class BenchmarkHarnessTest {
         assertTrue(content.contains("\"fingerprint\": \"abc123\""));
         assertTrue(content.contains("\"warmColdState\": \"cold\""));
         assertTrue(content.contains("\"configInputsDigest\": \"cfg123\""));
+    }
+
+    @Test
+    void recordsBenchmarkRunStartAndFinishForMatchingStartupCase() throws Exception {
+        System.setProperty("momooptimizer.benchmark.caseId", "startup_warm");
+
+        BenchmarkHarness harness = new BenchmarkHarness(tempDir, () -> true, () -> true);
+        PackFingerprintSnapshot snapshot = new PackFingerprintSnapshot(
+                "abc123",
+                "warm",
+                "1.21.1",
+                "21.1.122",
+                List.of(),
+                List.of(),
+                Map.of("cacheMaxMiB", "2048"));
+
+        harness.beginBenchmarkRun(snapshot);
+        harness.finishStartupBenchmark(12_500_000L);
+
+        String content = Files.readString(tempDir.resolve("benchmark-events.jsonl"));
+
+        assertTrue(content.contains("\"eventType\":\"benchmark_run_start\""));
+        assertTrue(content.contains("\"eventType\":\"benchmark_run_finish\""));
+        assertTrue(content.contains("\"caseId\":\"startup_warm\""));
+        assertTrue(content.contains("\"startupMillis\":12.5"));
+    }
+
+    @Test
+    void invalidatesBenchmarkRunWhenTemperatureDoesNotMatchExpectedCase() throws Exception {
+        System.setProperty("momooptimizer.benchmark.caseId", "startup_cold");
+
+        BenchmarkHarness harness = new BenchmarkHarness(tempDir, () -> true, () -> true);
+        PackFingerprintSnapshot snapshot = new PackFingerprintSnapshot(
+                "abc123",
+                "warm",
+                "1.21.1",
+                "21.1.122",
+                List.of(),
+                List.of(),
+                Map.of("cacheMaxMiB", "2048"));
+
+        harness.beginBenchmarkRun(snapshot);
+        harness.finishStartupBenchmark(12_500_000L);
+
+        String content = Files.readString(tempDir.resolve("benchmark-events.jsonl"));
+
+        assertTrue(content.contains("\"eventType\":\"benchmark_run_invalidated\""));
+        assertTrue(content.contains("\"reason\":\"temperature-mismatch\""));
     }
 }

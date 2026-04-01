@@ -92,6 +92,39 @@ class PackFingerprintGeneratorTest {
         assertTrue(comparison.differences().contains("relevantFileHashes changed"));
     }
 
+    @Test
+    void canonicalizeEscapesReservedCharactersAndNormalizesPaths() {
+        PackFingerprintInput input = sampleInput(
+                List.of(new ResourcePackFingerprintEntry("vanilla", "Vanilla")),
+                Map.of(".//assets\\example\\models\\block=line\nbreak.json", "ABCD"),
+                Map.of(" cache.key ", "line1\nline2=value")
+        );
+
+        String canonical = PackFingerprintGenerator.canonicalize(input);
+
+        assertTrue(canonical.contains("relevantFileHashes[assets/example/models/block\\=line\\nbreak.json]=abcd"));
+        assertTrue(canonical.contains("settings[cache.key]=line1\\nline2\\=value"));
+    }
+
+    @Test
+    void reportsSettingsChangesSeparately() {
+        PackFingerprintInput left = sampleInput(
+                List.of(new ResourcePackFingerprintEntry("vanilla", "Vanilla")),
+                Map.of("assets/example/models/item/a.json", "1111"),
+                Map.of("cache.enabled", "true")
+        );
+        PackFingerprintInput right = sampleInput(
+                List.of(new ResourcePackFingerprintEntry("vanilla", "Vanilla")),
+                Map.of("assets/example/models/item/a.json", "1111"),
+                Map.of("cache.enabled", "false")
+        );
+
+        PackFingerprintComparison comparison = PackFingerprintGenerator.compare(left, right);
+
+        assertFalse(comparison.identical());
+        assertTrue(comparison.differences().contains("settings changed"));
+    }
+
     private static PackFingerprintInput sampleInput(List<ResourcePackFingerprintEntry> packs) {
         return sampleInput(packs, Map.of("assets/example/models/item/a.json", "1111"), Map.of("cache.enabled", "true"));
     }

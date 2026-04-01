@@ -66,4 +66,25 @@ class FoundationStatsTest {
         assertFalse(state.get("active").getAsBoolean());
         assertEquals("RECOVERED", state.get("reasonCode").getAsString());
     }
+
+    @Test
+    void aggregatesStageMetricsByThreadType() {
+        FoundationStats stats = new FoundationStats();
+
+        stats.recordStage("foundation.bootstrap", 5_000_000L, true, "main");
+        stats.recordStage("foundation.bootstrap", 15_000_000L, false, "worker-1");
+
+        JsonObject stage = stats.toJson()
+                .getAsJsonArray("stages")
+                .get(0)
+                .getAsJsonObject();
+
+        assertEquals("foundation.bootstrap", stage.get("stage").getAsString());
+        assertEquals(2L, stage.get("count").getAsLong());
+        assertEquals(20.0D, stage.get("totalMillis").getAsDouble());
+        assertEquals(15.0D, stage.get("maxMillis").getAsDouble());
+        assertEquals(0.25D, stage.get("mainThreadRatio").getAsDouble());
+        assertEquals(0.75D, stage.get("offThreadRatio").getAsDouble());
+        assertEquals("worker-1", stage.get("lastThread").getAsString());
+    }
 }
