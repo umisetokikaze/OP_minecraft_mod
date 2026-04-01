@@ -67,6 +67,10 @@ public final class PackFingerprintService {
         try (StageProfiler.StageScope ignored = profiler.begin("foundation.fingerprint.digest")) {
             String canonical = buildCanonicalInput(minecraftVersion, neoForgeVersion, mods, packs, configInputs);
             String fingerprint = sha256Hex(canonical.getBytes(StandardCharsets.UTF_8));
+            String configInputsDigest = sha256Hex(configInputs.entrySet().stream()
+                    .map(entry -> entry.getKey() + "=" + entry.getValue())
+                    .collect(Collectors.joining("\n"))
+                    .getBytes(StandardCharsets.UTF_8));
             boolean warm = Files.exists(fingerprintDirectory.resolve(fingerprint + ".json"));
             return new PackFingerprintSnapshot(
                     fingerprint,
@@ -75,7 +79,8 @@ public final class PackFingerprintService {
                     neoForgeVersion,
                     mods,
                     packs,
-                    configInputs);
+                    configInputs,
+                    configInputsDigest);
         }
     }
 

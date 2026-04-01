@@ -2,6 +2,7 @@ package io.github.umisetokikaze.foundation;
 
 import com.google.gson.JsonObject;
 import io.github.umisetokikaze.Config;
+import io.github.umisetokikaze.foundation.cache.SafeCacheLayer;
 import io.github.umisetokikaze.momooptimizer;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -19,6 +20,7 @@ public final class ProfilingFoundation {
     private final FoundationStats stats = new FoundationStats();
     private final BenchmarkHarness benchmarkHarness = new BenchmarkHarness(rootDirectory.resolve("benchmark"));
     private final StageProfiler profiler = new StageProfiler(stats, benchmarkHarness);
+    private final SafeCacheLayer safeCacheLayer = new SafeCacheLayer(this, rootDirectory.resolve("cache"));
 
     private volatile PackFingerprintSnapshot currentFingerprint;
 
@@ -105,6 +107,10 @@ public final class ProfilingFoundation {
         return new PackFingerprintService(this, profiler, rootDirectory.resolve("fingerprints"));
     }
 
+    public SafeCacheLayer getSafeCacheLayer() {
+        return safeCacheLayer;
+    }
+
     public PackFingerprintSnapshot updateFingerprint(PackFingerprintSnapshot snapshot) {
         this.currentFingerprint = snapshot;
         stats.setWarmColdState(snapshot.executionTemperature());
@@ -119,6 +125,18 @@ public final class ProfilingFoundation {
         benchmarkHarness.beginBenchmarkRun(snapshot);
         emitDiagnostics();
         return snapshot;
+    }
+
+    public PackFingerprintSnapshot currentFingerprint() {
+        return currentFingerprint;
+    }
+
+    public Path benchmarkDirectory() {
+        return rootDirectory.resolve("benchmark");
+    }
+
+    public Path diagnosticsFile() {
+        return benchmarkDirectory().resolve("diagnostics-latest.json");
     }
 
     public void recordReloadObservation(int namespaceCount, long durationNanos) {

@@ -26,7 +26,8 @@ class BenchmarkHarnessTest {
                 "21.1.122",
                 List.of(),
                 List.of(),
-                Map.of("cacheMaxMiB", "2048"));
+                Map.of("cacheMaxMiB", "2048"),
+                "cfg123");
 
         harness.recordCacheResult(snapshot, "foundation.pack_fingerprint.marker", true, "HIT", "");
         harness.recordInvalidation(snapshot, "foundation.pack_fingerprint", "FINGERPRINT_CHANGED", "resource-pack-order");
@@ -57,7 +58,8 @@ class BenchmarkHarnessTest {
                 "21.1.122",
                 List.of(),
                 List.of(),
-                Map.of("cacheMaxMiB", "2048"));
+                Map.of("cacheMaxMiB", "2048"),
+                "cfg123");
         JsonObject stats = new JsonObject();
         stats.addProperty("warmColdState", "cold");
         stats.add("cacheResults", new JsonArray());
@@ -73,5 +75,6 @@ class BenchmarkHarnessTest {
 
         assertTrue(content.contains("\"fingerprint\": \"abc123\""));
         assertTrue(content.contains("\"warmColdState\": \"cold\""));
+        assertTrue(content.contains("\"configInputsDigest\": \"cfg123\""));
     }
 }
