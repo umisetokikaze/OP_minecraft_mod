@@ -35,11 +35,35 @@ public final class Config {
             .define("foundation.logging.debug", false);
 
     public static final ModConfigSpec.IntValue CACHE_MAX_MIB = BUILDER
-            .comment("Global cache budget in MiB reserved for future cache modules.")
+            .comment("Global cache budget in MiB for persistent cache modules.")
             .defineInRange("cache.maxMiB", 2048, 128, 1024 * 1024);
 
+    public static final ModConfigSpec.BooleanValue CACHE_GLOBAL_ENABLED = BUILDER
+            .comment("Enable the persistent safe cache layer globally.")
+            .define("cache.enabled", true);
+
+    public static final ModConfigSpec.BooleanValue CACHE_RESOURCE_INDEX_ENABLED = BUILDER
+            .comment("Enable the resource index cache module.")
+            .define("cache.resourceIndex.enabled", true);
+
+    public static final ModConfigSpec.BooleanValue CACHE_NEGATIVE_LOOKUP_ENABLED = BUILDER
+            .comment("Enable the negative lookup cache module.")
+            .define("cache.negativeLookup.enabled", true);
+
+    public static final ModConfigSpec.BooleanValue CACHE_COMMANDS_ENABLED = BUILDER
+            .comment("Enable cache management commands.")
+            .define("cache.commands.enabled", true);
+
+    public static final ModConfigSpec.BooleanValue CACHE_INTEGRITY_STRICT = BUILDER
+            .comment("Quarantine a module when cache integrity failures are detected.")
+            .define("cache.integrity.strict", true);
+
+    public static final ModConfigSpec.BooleanValue CACHE_REBUILD_ON_MISS = BUILDER
+            .comment("Persist rebuilt cache entries after cold-path misses.")
+            .define("cache.rebuildOnMiss", true);
+
     public static final ModConfigSpec.ConfigValue<String> EVICTION_POLICY = BUILDER
-            .comment("Eviction policy placeholder for future cache store integration.")
+            .comment("Eviction policy for persistent cache modules.")
             .define("cache.evictionPolicy", "lru");
 
     public static final ModConfigSpec.ConfigValue<String> COMPATIBILITY_MODE = BUILDER
@@ -77,6 +101,12 @@ public final class Config {
         values.put("packFingerprintEnabled", String.valueOf(PACK_FINGERPRINT_ENABLED.get()));
         values.put("stageProfilingEnabled", String.valueOf(STAGE_PROFILING_ENABLED.get()));
         values.put("benchmarkHarnessEnabled", String.valueOf(BENCHMARK_HARNESS_ENABLED.get()));
+        values.put("cacheGlobalEnabled", String.valueOf(CACHE_GLOBAL_ENABLED.get()));
+        values.put("cacheResourceIndexEnabled", String.valueOf(CACHE_RESOURCE_INDEX_ENABLED.get()));
+        values.put("cacheNegativeLookupEnabled", String.valueOf(CACHE_NEGATIVE_LOOKUP_ENABLED.get()));
+        values.put("cacheCommandsEnabled", String.valueOf(CACHE_COMMANDS_ENABLED.get()));
+        values.put("cacheIntegrityStrict", String.valueOf(CACHE_INTEGRITY_STRICT.get()));
+        values.put("cacheRebuildOnMiss", String.valueOf(CACHE_REBUILD_ON_MISS.get()));
         values.put("cacheMaxMiB", String.valueOf(CACHE_MAX_MIB.get()));
         values.put("evictionPolicy", EVICTION_POLICY.get());
         values.put("compatibilityMode", COMPATIBILITY_MODE.get());

@@ -12,7 +12,8 @@ public record PackFingerprintSnapshot(
         String neoForgeVersion,
         List<JsonObject> mods,
         List<JsonObject> resourcePacks,
-        Map<String, String> configInputs) {
+        Map<String, String> configInputs,
+        String configInputsDigest) {
 
     JsonObject toJson() {
         JsonObject json = new JsonObject();
@@ -33,6 +34,7 @@ public record PackFingerprintSnapshot(
         JsonObject configJson = new JsonObject();
         configInputs.forEach((key, value) -> configJson.addProperty(key, value));
         json.add("configInputs", configJson);
+        json.addProperty("configInputsDigest", configInputsDigest);
         return json;
     }
 }
