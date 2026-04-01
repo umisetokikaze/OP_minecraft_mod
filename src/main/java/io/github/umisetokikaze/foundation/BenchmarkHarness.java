@@ -11,23 +11,34 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.function.BooleanSupplier;
 
 final class BenchmarkHarness {
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final Gson GSON = new GsonBuilder().create();
+    private static final Gson PRETTY_GSON = new GsonBuilder().setPrettyPrinting().create();
 
     private final String sessionId = UUID.randomUUID().toString();
     private final Path rootDirectory;
     private final Path benchmarkFile;
     private final Path diagnosticsFile;
+    private final BooleanSupplier benchmarkEnabled;
+    private final BooleanSupplier diagnosticsJsonEnabled;
     private final BenchmarkRunDescriptor runDescriptor = BenchmarkRunDescriptor.fromSystemProperties();
+
     private boolean benchmarkRunStarted;
     private boolean benchmarkRunFinished;
     private Double pendingWorldJoinTtfcfMillis;
 
     BenchmarkHarness(Path rootDirectory) {
+        this(rootDirectory, () -> Config.BENCHMARK_HARNESS_ENABLED.get(), () -> Config.DIAGNOSTICS_JSON_ENABLED.get());
+    }
+
+    BenchmarkHarness(Path rootDirectory, BooleanSupplier benchmarkEnabled, BooleanSupplier diagnosticsJsonEnabled) {
         this.rootDirectory = rootDirectory;
         this.benchmarkFile = rootDirectory.resolve("benchmark-events.jsonl");
         this.diagnosticsFile = rootDirectory.resolve("diagnostics-latest.json");
+        this.benchmarkEnabled = benchmarkEnabled;
+        this.diagnosticsJsonEnabled = diagnosticsJsonEnabled;
         ensureDirectories();
     }
 
@@ -36,7 +47,7 @@ final class BenchmarkHarness {
     }
 
     void recordStage(String stageName, long durationNanos, boolean mainThread, String threadName) {
-        if (!Config.BENCHMARK_HARNESS_ENABLED.get()) {
+        if (!benchmarkEnabled.getAsBoolean()) {
             return;
         }
         JsonObject payload = new JsonObject();
@@ -73,7 +84,7 @@ final class BenchmarkHarness {
         payload.add("fingerprint", fingerprintSnapshot.toJson());
         payload.add("stats", statsSnapshot);
         appendEvent("snapshot", payload);
-        if (Config.DIAGNOSTICS_JSON_ENABLED.get()) {
+        if (diagnosticsJsonEnabled.getAsBoolean()) {
             writePrettyJson(diagnosticsFile, payload);
         }
     }
@@ -91,6 +102,56 @@ final class BenchmarkHarness {
         payload.addProperty("namespaceCount", namespaceCount);
         payload.addProperty("durationMillis", durationNanos / 1_000_000.0D);
         appendEvent("resource_reload", payload);
+    }
+
+    void recordCacheResult(
+            PackFingerprintSnapshot fingerprintSnapshot,
+            String module,
+            boolean hit,
+            String reasonCode,
+            String detail) {
+        JsonObject payload = createDiagnosticPayload(fingerprintSnapshot, module);
+        payload.addProperty("outcome", hit ? "hit" : "miss");
+        payload.addProperty("reasonCode", reasonCode);
+        payload.addProperty("detail", detail == null ? "" : detail);
+        appendEvent("cache_result", payload);
+    }
+
+    void recordInvalidation(
+            PackFingerprintSnapshot fingerprintSnapshot,
+            String module,
+            String reasonCode,
+            String detail) {
+        JsonObject payload = createDiagnosticPayload(fingerprintSnapshot, module);
+        payload.addProperty("reasonCode", reasonCode);
+        payload.addProperty("detail", detail == null ? "" : detail);
+        appendEvent("invalidation", payload);
+    }
+
+    void recordCacheUsage(
+            PackFingerprintSnapshot fingerprintSnapshot,
+            String module,
+            long bytesUsed,
+            long entryCount,
+            long budgetMiB) {
+        JsonObject payload = createDiagnosticPayload(fingerprintSnapshot, module);
+        payload.addProperty("bytesUsed", bytesUsed);
+        payload.addProperty("entryCount", entryCount);
+        payload.addProperty("budgetMiB", budgetMiB);
+        appendEvent("cache_usage", payload);
+    }
+
+    void recordQuarantine(
+            PackFingerprintSnapshot fingerprintSnapshot,
+            String module,
+            boolean active,
+            String reasonCode,
+            String detail) {
+        JsonObject payload = createDiagnosticPayload(fingerprintSnapshot, module);
+        payload.addProperty("active", active);
+        payload.addProperty("reasonCode", reasonCode);
+        payload.addProperty("detail", detail == null ? "" : detail);
+        appendEvent("quarantine", payload);
     }
 
     void beginBenchmarkRun(PackFingerprintSnapshot snapshot) {
@@ -142,7 +203,7 @@ final class BenchmarkHarness {
     }
 
     private synchronized void appendEvent(String eventType, JsonObject payload) {
-        if (!Config.BENCHMARK_HARNESS_ENABLED.get()) {
+        if (!benchmarkEnabled.getAsBoolean()) {
             return;
         }
 
@@ -170,7 +231,7 @@ final class BenchmarkHarness {
     private void writePrettyJson(Path path, JsonObject payload) {
         ensureDirectories();
         try {
-            Files.writeString(path, GSON.toJson(payload), StandardCharsets.UTF_8);
+            Files.writeString(path, PRETTY_GSON.toJson(payload), StandardCharsets.UTF_8);
         } catch (IOException exception) {
             momooptimizer.LOGGER.warn("Failed to write diagnostics snapshot {}", path, exception);
         }
@@ -182,6 +243,14 @@ final class BenchmarkHarness {
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to create foundation output directory " + rootDirectory, exception);
         }
+    }
+
+    private JsonObject createDiagnosticPayload(PackFingerprintSnapshot fingerprintSnapshot, String module) {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("fingerprint", fingerprintSnapshot != null ? fingerprintSnapshot.fingerprint() : "unavailable");
+        payload.addProperty("warmCold", fingerprintSnapshot != null ? fingerprintSnapshot.executionTemperature() : "unknown");
+        payload.addProperty("module", module);
+        return payload;
     }
 
     private boolean matchesCase(BenchmarkCaseId caseId) {
