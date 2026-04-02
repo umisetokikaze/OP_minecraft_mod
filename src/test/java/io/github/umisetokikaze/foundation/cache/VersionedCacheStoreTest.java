@@ -12,6 +12,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class VersionedCacheStoreTest {
@@ -34,6 +35,10 @@ class VersionedCacheStoreTest {
         assertTrue(result.hit());
         assertEquals(snapshot.existenceSet(), result.value().existenceSet());
         assertEquals(snapshot.negativeLookupSet(), result.value().negativeLookupSet());
+        assertEquals(1, result.metadata().schemaVersion());
+        assertEquals("dep1", result.metadata().dependencyDigest());
+        assertEquals("resource_index", result.metadata().entryType());
+        assertEquals(IntegrityState.VALID, result.metadata().integrityState());
     }
 
     @Test
@@ -61,7 +66,78 @@ class VersionedCacheStoreTest {
 
         assertFalse(bad.hit());
         assertEquals(InvalidationReason.CHECKSUM_MISMATCH, bad.reason());
+        assertNotNull(bad.metadata());
+        assertEquals(IntegrityState.CORRUPT, bad.metadata().integrityState());
+        assertFalse(Files.exists(fingerprintDir.resolve("bad.meta.json")));
+        assertFalse(Files.exists(fingerprintDir.resolve("bad.data.json")));
         assertTrue(good.hit());
+    }
+
+    @Test
+    void entryTypeMismatchDiscardsSingleEntry() throws Exception {
+        VersionedCacheStore store = new VersionedCacheStore(tempDir, 1);
+        store.write(CacheModuleId.RESOURCE_INDEX, "dep1", "typed", ResourceIndexSnapshot.codec("resource_index"), sampleSnapshot(Set.of("example:item/a.json"), Set.of()));
+
+        CacheLookupResult<ResourceIndexSnapshot> result = store.read(
+                CacheModuleId.RESOURCE_INDEX,
+                "dep1",
+                "typed",
+                ResourceIndexSnapshot.codec("negative_lookup"));
+
+        Path fingerprintDir = tempDir.resolve("schema-v1").resolve("resource_index").resolve("dep1");
+        assertFalse(result.hit());
+        assertEquals(InvalidationReason.ENTRY_TYPE_MISMATCH, result.reason());
+        assertNotNull(result.metadata());
+        assertEquals(IntegrityState.INVALIDATED, result.metadata().integrityState());
+        assertFalse(Files.exists(fingerprintDir.resolve("typed.meta.json")));
+        assertFalse(Files.exists(fingerprintDir.resolve("typed.data.json")));
+    }
+
+    @Test
+    void fingerprintMismatchDiscardsSingleEntry() throws Exception {
+        VersionedCacheStore store = new VersionedCacheStore(tempDir, 1);
+        store.write(CacheModuleId.RESOURCE_INDEX, "dep1", "entry", ResourceIndexSnapshot.codec("resource_index"), sampleSnapshot(Set.of("example:item/a.json"), Set.of()));
+
+        Path fingerprintDir = tempDir.resolve("schema-v1").resolve("resource_index").resolve("dep1");
+        Path metaPath = fingerprintDir.resolve("entry.meta.json");
+        String rewritten = Files.readString(metaPath, StandardCharsets.UTF_8).replace("\"dependencyDigest\": \"dep1\"", "\"dependencyDigest\": \"dep-other\"");
+        Files.writeString(metaPath, rewritten, StandardCharsets.UTF_8);
+
+        CacheLookupResult<ResourceIndexSnapshot> result = store.read(
+                CacheModuleId.RESOURCE_INDEX,
+                "dep1",
+                "entry",
+                ResourceIndexSnapshot.codec("resource_index"));
+
+        assertFalse(result.hit());
+        assertEquals(InvalidationReason.FINGERPRINT_CHANGED, result.reason());
+        assertNotNull(result.metadata());
+        assertEquals(IntegrityState.INVALIDATED, result.metadata().integrityState());
+        assertFalse(Files.exists(fingerprintDir.resolve("entry.meta.json")));
+        assertFalse(Files.exists(fingerprintDir.resolve("entry.data.json")));
+    }
+
+    @Test
+    void refreshesLastUsedTimestampOnReadHit() throws Exception {
+        VersionedCacheStore store = new VersionedCacheStore(tempDir, 1);
+        CacheEntryMetadata written = store.write(
+                CacheModuleId.RESOURCE_INDEX,
+                "dep1",
+                "entry",
+                ResourceIndexSnapshot.codec("resource_index"),
+                sampleSnapshot(Set.of("example:item/a.json"), Set.of()));
+
+        Thread.sleep(5L);
+
+        CacheLookupResult<ResourceIndexSnapshot> result = store.read(
+                CacheModuleId.RESOURCE_INDEX,
+                "dep1",
+                "entry",
+                ResourceIndexSnapshot.codec("resource_index"));
+
+        assertTrue(result.hit());
+        assertNotNull(result.metadata());
+        assertTrue(result.metadata().lastUsedAtEpochMillis() >= written.lastUsedAtEpochMillis());
     }
 
     @Test

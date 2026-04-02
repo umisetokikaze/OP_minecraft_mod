@@ -24,6 +24,9 @@ public final class SafeCacheLayer {
     private final ConcurrentHashMap<CacheModuleId, Boolean> rebuildRequested = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<CacheModuleId, String> lastReason = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<CacheModuleId, String> lastDetail = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<CacheModuleId, String> lastIntegrityState = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<CacheModuleId, String> lastIntegrityReason = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<CacheModuleId, Long> integrityFailureCount = new ConcurrentHashMap<>();
 
     public SafeCacheLayer(ProfilingFoundation foundation, Path rootDirectory) {
         this.foundation = foundation;
@@ -141,6 +144,9 @@ public final class SafeCacheLayer {
                     Boolean.TRUE.equals(rebuildRequested.get(module)),
                     usage.bytesUsed(),
                     usage.entryCount(),
+                    lastIntegrityState.getOrDefault(module, IntegrityState.VALID.name()),
+                    lastIntegrityReason.getOrDefault(module, "NONE"),
+                    integrityFailureCount.getOrDefault(module, 0L),
                     lastReason.getOrDefault(module, "NONE"),
                     lastDetail.getOrDefault(module, "")));
         }
@@ -168,6 +174,7 @@ public final class SafeCacheLayer {
     private void note(PackFingerprintSnapshot snapshot, CacheModuleId module, InvalidationReason reason, String detail, boolean hit) {
         lastReason.put(module, reason.name());
         lastDetail.put(module, detail == null ? "" : detail);
+        noteIntegrity(module, reason);
         foundation.recordCacheResult(snapshot, module.id(), hit, reason.name(), detail);
         if (!hit && reason != InvalidationReason.ENTRY_MISSING && reason != InvalidationReason.REBUILD_REQUESTED) {
             foundation.recordInvalidation(snapshot, module.id(), reason.name(), detail);
@@ -186,5 +193,19 @@ public final class SafeCacheLayer {
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("Missing SHA-256 support", exception);
         }
+    }
+
+    private void noteIntegrity(CacheModuleId module, InvalidationReason reason) {
+        IntegrityState state = switch (reason) {
+            case CHECKSUM_MISMATCH, DESERIALIZE_FAILED -> IntegrityState.CORRUPT;
+            case SCHEMA_MISMATCH, FINGERPRINT_CHANGED, ENTRY_TYPE_MISMATCH -> IntegrityState.INVALIDATED;
+            default -> IntegrityState.VALID;
+        };
+        lastIntegrityState.put(module, state.name());
+        lastIntegrityReason.put(module, state == IntegrityState.VALID ? "NONE" : reason.name());
+        if (state != IntegrityState.VALID) {
+            integrityFailureCount.merge(module, 1L, Long::sum);
+        }
+        foundation.recordIntegrityResult(module.id(), state.name(), state == IntegrityState.VALID ? "NONE" : reason.name());
     }
 }

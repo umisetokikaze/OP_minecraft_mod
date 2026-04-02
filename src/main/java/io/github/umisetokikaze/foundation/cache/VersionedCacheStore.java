@@ -46,33 +46,28 @@ public final class VersionedCacheStore {
             JsonObject metadataJson = JsonParser.parseString(Files.readString(metaPath, StandardCharsets.UTF_8)).getAsJsonObject();
             CacheEntryMetadata metadata = metadataFromJson(metadataJson);
             if (metadata.schemaVersion() != schemaVersion) {
-                deleteQuietly(metaPath);
-                deleteQuietly(dataPath);
-                return CacheLookupResult.miss(InvalidationReason.SCHEMA_MISMATCH, entryKey);
+                discardEntry(metaPath, dataPath);
+                return CacheLookupResult.miss(InvalidationReason.SCHEMA_MISMATCH, entryKey, withIntegrityState(metadata, IntegrityState.INVALIDATED));
             }
             if (!metadata.dependencyDigest().equals(dependencyDigest)) {
-                return CacheLookupResult.miss(InvalidationReason.FINGERPRINT_CHANGED, entryKey);
+                discardEntry(metaPath, dataPath);
+                return CacheLookupResult.miss(InvalidationReason.FINGERPRINT_CHANGED, entryKey, withIntegrityState(metadata, IntegrityState.INVALIDATED));
+            }
+            if (!metadata.entryType().equals(codec.entryType())) {
+                discardEntry(metaPath, dataPath);
+                return CacheLookupResult.miss(InvalidationReason.ENTRY_TYPE_MISMATCH, entryKey, withIntegrityState(metadata, IntegrityState.INVALIDATED));
             }
 
             String payload = Files.readString(dataPath, StandardCharsets.UTF_8);
             String checksum = sha256Hex(payload);
             if (!checksum.equals(metadata.checksum())) {
-                writeMetadata(metaPath, new CacheEntryMetadata(
-                        metadata.schemaVersion(),
-                        metadata.dependencyDigest(),
-                        metadata.entryType(),
-                        metadata.checksum(),
-                        metadata.createdAtEpochMillis(),
-                        metadata.lastUsedAtEpochMillis(),
-                        metadata.sizeBytes(),
-                        IntegrityState.CORRUPT));
-                deleteQuietly(dataPath);
-                return CacheLookupResult.miss(InvalidationReason.CHECKSUM_MISMATCH, entryKey);
+                discardEntry(metaPath, dataPath);
+                return CacheLookupResult.miss(InvalidationReason.CHECKSUM_MISMATCH, entryKey, withIntegrityState(metadata, IntegrityState.CORRUPT));
             }
 
             T decoded = codec.decode(JsonParser.parseString(payload));
             long now = Instant.now().toEpochMilli();
-            writeMetadata(metaPath, new CacheEntryMetadata(
+            CacheEntryMetadata refreshedMetadata = new CacheEntryMetadata(
                     metadata.schemaVersion(),
                     metadata.dependencyDigest(),
                     metadata.entryType(),
@@ -80,12 +75,16 @@ public final class VersionedCacheStore {
                     metadata.createdAtEpochMillis(),
                     now,
                     metadata.sizeBytes(),
-                    IntegrityState.VALID));
-            return CacheLookupResult.hit(decoded, metadata);
+                    IntegrityState.VALID);
+            writeMetadata(metaPath, refreshedMetadata);
+            return CacheLookupResult.hit(decoded, refreshedMetadata);
         } catch (RuntimeException | IOException exception) {
-            deleteQuietly(metaPath);
-            deleteQuietly(dataPath);
-            return CacheLookupResult.miss(InvalidationReason.DESERIALIZE_FAILED, exception.getClass().getSimpleName());
+            CacheEntryMetadata metadata = readMetadataQuietly(metaPath);
+            discardEntry(metaPath, dataPath);
+            return CacheLookupResult.miss(
+                    InvalidationReason.DESERIALIZE_FAILED,
+                    exception.getClass().getSimpleName(),
+                    metadata == null ? null : withIntegrityState(metadata, IntegrityState.CORRUPT));
         }
     }
 
@@ -220,6 +219,35 @@ public final class VersionedCacheStore {
                 json.get("lastUsedAtEpochMillis").getAsLong(),
                 json.get("sizeBytes").getAsLong(),
                 IntegrityState.valueOf(json.get("integrityState").getAsString()));
+    }
+
+    private CacheEntryMetadata readMetadataQuietly(Path path) {
+        if (!Files.exists(path)) {
+            return null;
+        }
+        try {
+            JsonObject metadataJson = JsonParser.parseString(Files.readString(path, StandardCharsets.UTF_8)).getAsJsonObject();
+            return metadataFromJson(metadataJson);
+        } catch (RuntimeException | IOException exception) {
+            return null;
+        }
+    }
+
+    private CacheEntryMetadata withIntegrityState(CacheEntryMetadata metadata, IntegrityState integrityState) {
+        return new CacheEntryMetadata(
+                metadata.schemaVersion(),
+                metadata.dependencyDigest(),
+                metadata.entryType(),
+                metadata.checksum(),
+                metadata.createdAtEpochMillis(),
+                metadata.lastUsedAtEpochMillis(),
+                metadata.sizeBytes(),
+                integrityState);
+    }
+
+    private void discardEntry(Path metaPath, Path dataPath) {
+        deleteQuietly(metaPath);
+        deleteQuietly(dataPath);
     }
 
     private void atomicWriteString(Path path, String content) throws IOException {
