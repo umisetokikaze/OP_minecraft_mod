@@ -3,6 +3,7 @@ package io.github.umisetokikaze.foundation.cache;
 import io.github.umisetokikaze.Config;
 import io.github.umisetokikaze.foundation.PackFingerprintSnapshot;
 import io.github.umisetokikaze.foundation.ProfilingFoundation;
+import io.github.umisetokikaze.momooptimizer;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -38,10 +39,38 @@ public final class SafeCacheLayer {
     }
 
     public boolean isModuleEnabled(CacheModuleId module) {
-        return switch (module) {
-            case RESOURCE_INDEX -> Config.CACHE_RESOURCE_INDEX_ENABLED.get();
-            case NEGATIVE_LOOKUP -> Config.CACHE_NEGATIVE_LOOKUP_ENABLED.get();
-        };
+        return Config.cacheSettings(module).enabled();
+    }
+
+    public CacheEvictionPolicy effectiveEvictionPolicy(CacheModuleId module) {
+        CacheEvictionPolicy policy = Config.cacheSettings(module).evictionPolicy();
+        return policy == CacheEvictionPolicy.INHERIT ? Config.globalEvictionPolicy() : policy;
+    }
+
+    public CompatibilityMode effectiveCompatibilityMode(CacheModuleId module) {
+        CompatibilityMode mode = Config.cacheSettings(module).compatibilityMode();
+        return mode == CompatibilityMode.INHERIT ? Config.globalCompatibilityMode() : mode;
+    }
+
+    public boolean isCacheDebugLoggingEnabled(CacheModuleId module) {
+        CacheModuleSettings.DebugLoggingSetting setting = Config.cacheSettings(module).debugLogging();
+        if (setting == CacheModuleSettings.DebugLoggingSetting.INHERIT) {
+            setting = Config.globalCacheDebugLogging();
+        }
+        return setting == CacheModuleSettings.DebugLoggingSetting.ENABLED;
+    }
+
+    public long effectiveBudgetMiB(CacheModuleId module) {
+        int override = Config.cacheSettings(module).maxMiB();
+        return override >= 0 ? override : Config.CACHE_MAX_MIB.get();
+    }
+
+    public boolean canWrite(CacheModuleId module) {
+        return effectiveCompatibilityMode(module) != CompatibilityMode.SAFE;
+    }
+
+    public boolean canScheduleRebuild(CacheModuleId module) {
+        return canWrite(module);
     }
 
     public <T> CacheLookupResult<T> read(
@@ -64,6 +93,12 @@ public final class SafeCacheLayer {
         }
 
         CacheLookupResult<T> result = store.read(module, dependencyDigest, stableEntryKey(entryKey), codec);
+        debug(module, "read dependencyDigest=%s entryKey=%s hit=%s reason=%s detail=%s".formatted(
+                dependencyDigest,
+                entryKey,
+                result.hit(),
+                result.reason().name(),
+                result.detail()));
         note(snapshot, module, result.reason(), result.detail(), result.hit());
         if (!result.hit() && result.reason() == InvalidationReason.DESERIALIZE_FAILED) {
             quarantine(snapshot, module, "DESERIALIZE_FAILED", result.detail());
@@ -82,11 +117,16 @@ public final class SafeCacheLayer {
         if (!isGlobalEnabled() || !isModuleEnabled(module)) {
             return;
         }
+        if (!canWrite(module)) {
+            note(snapshot, module, InvalidationReason.SAFE_MODE, "write-suppressed", false);
+            return;
+        }
         try {
             store.write(module, dependencyDigest, stableEntryKey(entryKey), codec, value);
             rebuildRequested.remove(module);
             note(snapshot, module, InvalidationReason.HIT, "write", true);
-            evictIfNeeded();
+            debug(module, "write dependencyDigest=%s entryKey=%s".formatted(dependencyDigest, entryKey));
+            evictIfNeeded(snapshot, module);
             refreshUsage(snapshot, module);
         } catch (IOException exception) {
             foundation.recordInvalidation(snapshot, module.id(), InvalidationReason.IO_FAILURE.name(), exception.getClass().getSimpleName());
@@ -115,8 +155,14 @@ public final class SafeCacheLayer {
         }
     }
 
-    public void markRebuildRequested(CacheModuleId module) {
+    public boolean markRebuildRequested(CacheModuleId module) {
+        if (!canScheduleRebuild(module)) {
+            note(null, module, InvalidationReason.SAFE_MODE, "rebuild-suppressed", false);
+            return false;
+        }
         rebuildRequested.put(module, true);
+        debug(module, "rebuild requested");
+        return true;
     }
 
     public void clearRebuildRequested(CacheModuleId module) {
@@ -137,6 +183,8 @@ public final class SafeCacheLayer {
         Map<CacheModuleId, CacheStatusSnapshot> snapshots = new EnumMap<>(CacheModuleId.class);
         for (CacheModuleId module : CacheModuleId.values()) {
             VersionedCacheStore.UsageStats usage = store.usage(module);
+            long budgetMiB = effectiveBudgetMiB(module);
+            boolean overBudget = usage.bytesUsed() > budgetMiB * 1024L * 1024L;
             snapshots.put(module, new CacheStatusSnapshot(
                     module,
                     isGlobalEnabled() && isModuleEnabled(module),
@@ -144,6 +192,11 @@ public final class SafeCacheLayer {
                     Boolean.TRUE.equals(rebuildRequested.get(module)),
                     usage.bytesUsed(),
                     usage.entryCount(),
+                    budgetMiB,
+                    effectiveEvictionPolicy(module).configValue(),
+                    effectiveCompatibilityMode(module).configValue(),
+                    isCacheDebugLoggingEnabled(module),
+                    overBudget,
                     lastIntegrityState.getOrDefault(module, IntegrityState.VALID.name()),
                     lastIntegrityReason.getOrDefault(module, "NONE"),
                     integrityFailureCount.getOrDefault(module, 0L),
@@ -153,11 +206,53 @@ public final class SafeCacheLayer {
         return Map.copyOf(snapshots);
     }
 
-    private void evictIfNeeded() throws IOException {
+    public Map<String, VersionedCacheStore.UsageStats> usageByDependencyDigest(CacheModuleId module) {
+        return store.usageByDependencyDigest(module);
+    }
+
+    private void evictIfNeeded(PackFingerprintSnapshot snapshot, CacheModuleId module) throws IOException {
+        evictForModuleBudget(snapshot, module);
+        evictForGlobalBudget(snapshot);
+    }
+
+    private void evictForModuleBudget(PackFingerprintSnapshot snapshot, CacheModuleId module) throws IOException {
+        long budgetBytes = effectiveBudgetMiB(module) * 1024L * 1024L;
+        CacheEvictionPolicy policy = effectiveEvictionPolicy(module);
+        if (policy == CacheEvictionPolicy.NONE) {
+            noteOverBudgetIfNeeded(snapshot, module, budgetBytes, "module-policy-none");
+            return;
+        }
+        List<String> evicted = store.evictLeastRecentlyUsed(budgetBytes, Optional.of(module));
+        for (String entry : evicted) {
+            foundation.recordInvalidation(snapshot, module.id(), InvalidationReason.EVICTED.name(), entry);
+        }
+        noteOverBudgetIfNeeded(snapshot, module, budgetBytes, "module-budget");
+    }
+
+    private void evictForGlobalBudget(PackFingerprintSnapshot snapshot) throws IOException {
         long budgetBytes = Config.CACHE_MAX_MIB.get() * 1024L * 1024L;
+        if (Config.globalEvictionPolicy() == CacheEvictionPolicy.NONE) {
+            noteGlobalOverBudgetIfNeeded(snapshot, budgetBytes);
+            return;
+        }
         List<String> evicted = store.evictLeastRecentlyUsed(budgetBytes, Optional.empty());
         for (String entry : evicted) {
-            foundation.recordInvalidation("foundation.cache", InvalidationReason.EVICTED.name(), entry);
+            foundation.recordInvalidation(snapshot, "foundation.cache", InvalidationReason.EVICTED.name(), entry);
+        }
+        noteGlobalOverBudgetIfNeeded(snapshot, budgetBytes);
+    }
+
+    private void noteOverBudgetIfNeeded(PackFingerprintSnapshot snapshot, CacheModuleId module, long budgetBytes, String detail) {
+        VersionedCacheStore.UsageStats usage = store.usage(module);
+        if (usage.bytesUsed() > budgetBytes) {
+            note(snapshot, module, InvalidationReason.OVER_BUDGET, detail, false);
+        }
+    }
+
+    private void noteGlobalOverBudgetIfNeeded(PackFingerprintSnapshot snapshot, long budgetBytes) {
+        VersionedCacheStore.UsageStats usage = store.usage(Optional.empty());
+        if (usage.bytesUsed() > budgetBytes) {
+            foundation.recordInvalidation(snapshot, "foundation.cache", InvalidationReason.OVER_BUDGET.name(), "global-budget");
         }
     }
 
@@ -183,7 +278,7 @@ public final class SafeCacheLayer {
 
     private void refreshUsage(PackFingerprintSnapshot snapshot, CacheModuleId module) {
         VersionedCacheStore.UsageStats usage = store.usage(module);
-        foundation.recordCacheUsage(snapshot, module.id(), usage.bytesUsed(), usage.entryCount(), Config.CACHE_MAX_MIB.get());
+        foundation.recordCacheUsage(snapshot, module.id(), usage.bytesUsed(), usage.entryCount(), effectiveBudgetMiB(module));
     }
 
     private String stableEntryKey(String entryKey) {
@@ -207,5 +302,11 @@ public final class SafeCacheLayer {
             integrityFailureCount.merge(module, 1L, Long::sum);
         }
         foundation.recordIntegrityResult(module.id(), state.name(), state == IntegrityState.VALID ? "NONE" : reason.name());
+    }
+
+    private void debug(CacheModuleId module, String message) {
+        if (isCacheDebugLoggingEnabled(module)) {
+            momooptimizer.LOGGER.info("Cache debug module={} {}", module.id(), message);
+        }
     }
 }

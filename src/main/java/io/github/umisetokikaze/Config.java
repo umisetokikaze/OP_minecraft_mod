@@ -1,10 +1,14 @@
 package io.github.umisetokikaze;
 
+import io.github.umisetokikaze.foundation.cache.CacheEvictionPolicy;
+import io.github.umisetokikaze.foundation.cache.CacheModuleId;
+import io.github.umisetokikaze.foundation.cache.CacheModuleSettings;
+import io.github.umisetokikaze.foundation.cache.CacheModuleSettings.DebugLoggingSetting;
+import io.github.umisetokikaze.foundation.cache.CompatibilityMode;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-
 import net.neoforged.neoforge.common.ModConfigSpec;
 
 public final class Config {
@@ -64,11 +68,47 @@ public final class Config {
 
     public static final ModConfigSpec.ConfigValue<String> EVICTION_POLICY = BUILDER
             .comment("Eviction policy for persistent cache modules.")
-            .define("cache.evictionPolicy", "lru");
+            .define("cache.evictionPolicy", "lru", Config::isGlobalEvictionPolicy);
+
+    public static final ModConfigSpec.ConfigValue<String> CACHE_DEBUG_LOGGING = BUILDER
+            .comment("Enable verbose cache logging.")
+            .define("cache.debugLogging", "disabled", Config::isModuleDebugLoggingSetting);
 
     public static final ModConfigSpec.ConfigValue<String> COMPATIBILITY_MODE = BUILDER
             .comment("Compatibility posture. Expected values: standard, safe.")
-            .define("compatibility.mode", "standard");
+            .define("compatibility.mode", "standard", Config::isCompatibilityMode);
+
+    public static final ModConfigSpec.IntValue CACHE_RESOURCE_INDEX_MAX_MIB = BUILDER
+            .comment("Override resource index cache budget in MiB. Use -1 to inherit the global budget.")
+            .defineInRange("cache.resourceIndex.maxMiB", -1, -1, 1024 * 1024);
+
+    public static final ModConfigSpec.ConfigValue<String> CACHE_RESOURCE_INDEX_EVICTION_POLICY = BUILDER
+            .comment("Override resource index eviction policy. Expected values: inherit, lru, none.")
+            .define("cache.resourceIndex.evictionPolicy", "inherit", Config::isModuleEvictionPolicy);
+
+    public static final ModConfigSpec.ConfigValue<String> CACHE_RESOURCE_INDEX_DEBUG_LOGGING = BUILDER
+            .comment("Override resource index cache debug logging. Expected values: inherit, enabled, disabled.")
+            .define("cache.resourceIndex.debugLogging", "inherit", Config::isModuleDebugLoggingSetting);
+
+    public static final ModConfigSpec.ConfigValue<String> CACHE_RESOURCE_INDEX_COMPATIBILITY_MODE = BUILDER
+            .comment("Override resource index compatibility mode. Expected values: inherit, standard, safe.")
+            .define("cache.resourceIndex.compatibilityMode", "inherit", Config::isModuleCompatibilityMode);
+
+    public static final ModConfigSpec.IntValue CACHE_NEGATIVE_LOOKUP_MAX_MIB = BUILDER
+            .comment("Override negative lookup cache budget in MiB. Use -1 to inherit the global budget.")
+            .defineInRange("cache.negativeLookup.maxMiB", -1, -1, 1024 * 1024);
+
+    public static final ModConfigSpec.ConfigValue<String> CACHE_NEGATIVE_LOOKUP_EVICTION_POLICY = BUILDER
+            .comment("Override negative lookup eviction policy. Expected values: inherit, lru, none.")
+            .define("cache.negativeLookup.evictionPolicy", "inherit", Config::isModuleEvictionPolicy);
+
+    public static final ModConfigSpec.ConfigValue<String> CACHE_NEGATIVE_LOOKUP_DEBUG_LOGGING = BUILDER
+            .comment("Override negative lookup cache debug logging. Expected values: inherit, enabled, disabled.")
+            .define("cache.negativeLookup.debugLogging", "inherit", Config::isModuleDebugLoggingSetting);
+
+    public static final ModConfigSpec.ConfigValue<String> CACHE_NEGATIVE_LOOKUP_COMPATIBILITY_MODE = BUILDER
+            .comment("Override negative lookup compatibility mode. Expected values: inherit, standard, safe.")
+            .define("cache.negativeLookup.compatibilityMode", "inherit", Config::isModuleCompatibilityMode);
 
     public static final ModConfigSpec.ConfigValue<String> WORLD_ENTRY_STAGING_INTENSITY = BUILDER
             .comment("World-entry staging intensity placeholder. Expected values: off, conservative, aggressive.")
@@ -109,7 +149,16 @@ public final class Config {
         values.put("cacheRebuildOnMiss", String.valueOf(CACHE_REBUILD_ON_MISS.get()));
         values.put("cacheMaxMiB", String.valueOf(CACHE_MAX_MIB.get()));
         values.put("evictionPolicy", EVICTION_POLICY.get());
+        values.put("cacheDebugLogging", CACHE_DEBUG_LOGGING.get());
         values.put("compatibilityMode", COMPATIBILITY_MODE.get());
+        values.put("cacheResourceIndexMaxMiB", String.valueOf(CACHE_RESOURCE_INDEX_MAX_MIB.get()));
+        values.put("cacheResourceIndexEvictionPolicy", CACHE_RESOURCE_INDEX_EVICTION_POLICY.get());
+        values.put("cacheResourceIndexDebugLogging", CACHE_RESOURCE_INDEX_DEBUG_LOGGING.get());
+        values.put("cacheResourceIndexCompatibilityMode", CACHE_RESOURCE_INDEX_COMPATIBILITY_MODE.get());
+        values.put("cacheNegativeLookupMaxMiB", String.valueOf(CACHE_NEGATIVE_LOOKUP_MAX_MIB.get()));
+        values.put("cacheNegativeLookupEvictionPolicy", CACHE_NEGATIVE_LOOKUP_EVICTION_POLICY.get());
+        values.put("cacheNegativeLookupDebugLogging", CACHE_NEGATIVE_LOOKUP_DEBUG_LOGGING.get());
+        values.put("cacheNegativeLookupCompatibilityMode", CACHE_NEGATIVE_LOOKUP_COMPATIBILITY_MODE.get());
         values.put("worldEntryStagingIntensity", WORLD_ENTRY_STAGING_INTENSITY.get());
         values.put("relevantFingerprintPaths", RELEVANT_FINGERPRINT_PATHS.get().stream()
                 .map(String::valueOf)
@@ -128,5 +177,83 @@ public final class Config {
 
     public static Map<String, String> toFingerprintSettings() {
         return Map.copyOf(fingerprintInputs());
+    }
+
+    public static CacheEvictionPolicy globalEvictionPolicy() {
+        return CacheEvictionPolicy.fromConfigValue(EVICTION_POLICY.get(), CacheEvictionPolicy.LRU);
+    }
+
+    public static CompatibilityMode globalCompatibilityMode() {
+        return CompatibilityMode.fromConfigValue(COMPATIBILITY_MODE.get(), CompatibilityMode.STANDARD);
+    }
+
+    public static DebugLoggingSetting globalCacheDebugLogging() {
+        return DebugLoggingSetting.fromConfigValue(CACHE_DEBUG_LOGGING.get(), DebugLoggingSetting.DISABLED);
+    }
+
+    public static CacheModuleSettings cacheSettings(CacheModuleId module) {
+        return switch (module) {
+            case RESOURCE_INDEX -> moduleSettings(
+                    module,
+                    CACHE_RESOURCE_INDEX_ENABLED.get(),
+                    CACHE_RESOURCE_INDEX_MAX_MIB.get(),
+                    CACHE_RESOURCE_INDEX_EVICTION_POLICY.get(),
+                    CACHE_RESOURCE_INDEX_DEBUG_LOGGING.get(),
+                    CACHE_RESOURCE_INDEX_COMPATIBILITY_MODE.get());
+            case NEGATIVE_LOOKUP -> moduleSettings(
+                    module,
+                    CACHE_NEGATIVE_LOOKUP_ENABLED.get(),
+                    CACHE_NEGATIVE_LOOKUP_MAX_MIB.get(),
+                    CACHE_NEGATIVE_LOOKUP_EVICTION_POLICY.get(),
+                    CACHE_NEGATIVE_LOOKUP_DEBUG_LOGGING.get(),
+                    CACHE_NEGATIVE_LOOKUP_COMPATIBILITY_MODE.get());
+        };
+    }
+
+    private static CacheModuleSettings moduleSettings(
+            CacheModuleId module,
+            boolean enabled,
+            int maxMiB,
+            String evictionPolicy,
+            String debugLogging,
+            String compatibilityMode) {
+        return new CacheModuleSettings(
+                module,
+                enabled,
+                maxMiB,
+                CacheEvictionPolicy.fromConfigValue(evictionPolicy, CacheEvictionPolicy.INHERIT),
+                DebugLoggingSetting.fromConfigValue(debugLogging, DebugLoggingSetting.INHERIT),
+                CompatibilityMode.fromConfigValue(compatibilityMode, CompatibilityMode.INHERIT));
+    }
+
+    private static boolean isGlobalEvictionPolicy(Object value) {
+        return value instanceof String stringValue
+                && ("lru".equalsIgnoreCase(stringValue) || "none".equalsIgnoreCase(stringValue));
+    }
+
+    private static boolean isModuleEvictionPolicy(Object value) {
+        return value instanceof String stringValue
+                && ("inherit".equalsIgnoreCase(stringValue)
+                || "lru".equalsIgnoreCase(stringValue)
+                || "none".equalsIgnoreCase(stringValue));
+    }
+
+    private static boolean isCompatibilityMode(Object value) {
+        return value instanceof String stringValue
+                && ("standard".equalsIgnoreCase(stringValue) || "safe".equalsIgnoreCase(stringValue));
+    }
+
+    private static boolean isModuleCompatibilityMode(Object value) {
+        return value instanceof String stringValue
+                && ("inherit".equalsIgnoreCase(stringValue)
+                || "standard".equalsIgnoreCase(stringValue)
+                || "safe".equalsIgnoreCase(stringValue));
+    }
+
+    private static boolean isModuleDebugLoggingSetting(Object value) {
+        return value instanceof String stringValue
+                && ("inherit".equalsIgnoreCase(stringValue)
+                || "enabled".equalsIgnoreCase(stringValue)
+                || "disabled".equalsIgnoreCase(stringValue));
     }
 }

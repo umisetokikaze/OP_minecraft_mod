@@ -15,8 +15,11 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
 
@@ -132,20 +135,37 @@ public final class VersionedCacheStore {
     }
 
     public UsageStats usage(CacheModuleId module) {
-        Path modulePath = modulePath(module);
-        if (!Files.exists(modulePath)) {
-            return new UsageStats(0L, 0L);
-        }
-        try (Stream<Path> stream = Files.walk(modulePath)) {
-            List<Path> files = stream.filter(Files::isRegularFile).toList();
+        return usage(Optional.of(module));
+    }
+
+    public UsageStats usage(Optional<CacheModuleId> moduleFilter) {
+        try {
+            List<EntryOnDisk> entries = listEntries(moduleFilter);
             long bytes = 0L;
-            for (Path file : files) {
-                bytes += Files.size(file);
+            for (EntryOnDisk entry : entries) {
+                bytes += entry.totalBytes();
             }
-            return new UsageStats(bytes, files.size() / 2L);
+            return new UsageStats(bytes, entries.size());
         } catch (IOException exception) {
             return new UsageStats(0L, 0L);
         }
+    }
+
+    public Map<String, UsageStats> usageByDependencyDigest(CacheModuleId module) {
+        Path modulePath = modulePath(module);
+        if (!Files.exists(modulePath)) {
+            return Map.of();
+        }
+        Map<String, UsageStats> stats = new LinkedHashMap<>();
+        try (Stream<Path> stream = Files.list(modulePath)) {
+            for (Path dependencyPath : stream.filter(Files::isDirectory).sorted().toList()) {
+                UsageStats usage = usageForDependencyDirectory(dependencyPath);
+                stats.put(dependencyPath.getFileName().toString(), usage);
+            }
+        } catch (IOException exception) {
+            return Map.of();
+        }
+        return Map.copyOf(stats);
     }
 
     public List<String> evictLeastRecentlyUsed(long maxBytes, Optional<CacheModuleId> moduleFilter) throws IOException {
@@ -183,17 +203,38 @@ public final class VersionedCacheStore {
                     CacheEntryMetadata metadata = metadataFromJson(metadataJson);
                     String fileName = metaPath.getFileName().toString();
                     String entryKey = fileName.substring(0, fileName.length() - ".meta.json".length());
+                    Path dataPath = metaPath.resolveSibling(entryKey + ".data.json");
+                    long metaSize = sizeQuietly(metaPath);
+                    long dataSize = sizeQuietly(dataPath);
                     entries.add(new EntryOnDisk(
                             module,
                             entryKey,
+                            metaPath.getParent().getFileName().toString(),
                             metadata.lastUsedAtEpochMillis(),
-                            metadata.sizeBytes(),
+                            metaSize + dataSize,
                             metaPath,
-                            metaPath.resolveSibling(entryKey + ".data.json")));
+                            dataPath));
                 }
             }
         }
         return entries;
+    }
+
+    private UsageStats usageForDependencyDirectory(Path dependencyPath) {
+        try (Stream<Path> stream = Files.list(dependencyPath)) {
+            List<Path> metaFiles = stream
+                    .filter(path -> path.getFileName().toString().endsWith(".meta.json"))
+                    .toList();
+            long bytes = 0L;
+            for (Path metaPath : metaFiles) {
+                String entryKey = metaPath.getFileName().toString().replace(".meta.json", "");
+                Path dataPath = metaPath.resolveSibling(entryKey + ".data.json");
+                bytes += sizeQuietly(metaPath) + sizeQuietly(dataPath);
+            }
+            return new UsageStats(bytes, metaFiles.size());
+        } catch (IOException exception) {
+            return new UsageStats(0L, 0L);
+        }
     }
 
     private void writeMetadata(Path path, CacheEntryMetadata metadata) throws IOException {
@@ -295,6 +336,14 @@ public final class VersionedCacheStore {
         }
     }
 
+    private long sizeQuietly(Path path) {
+        try {
+            return Files.exists(path) ? Files.size(path) : 0L;
+        } catch (IOException exception) {
+            return 0L;
+        }
+    }
+
     private String sha256Hex(String input) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
@@ -310,9 +359,14 @@ public final class VersionedCacheStore {
     private record EntryOnDisk(
             CacheModuleId module,
             String entryKey,
+            String dependencyDigest,
             long lastUsedAtEpochMillis,
             long sizeBytes,
             Path metaPath,
             Path dataPath) {
+
+        private long totalBytes() {
+            return sizeBytes;
+        }
     }
 }

@@ -19,6 +19,8 @@ public enum InvalidationReason {
     CHECKSUM_MISMATCH,
     DESERIALIZE_FAILED,
     IO_FAILURE,
+    SAFE_MODE,
     EVICTED,
+    OVER_BUDGET,
     PURGED
 }

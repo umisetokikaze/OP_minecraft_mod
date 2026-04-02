@@ -140,6 +140,10 @@ public final class ProfilingFoundation {
         emitDiagnostics();
     }
 
+    public CacheResolution currentCacheResolution() {
+        return currentCacheResolution;
+    }
+
     public Path benchmarkDirectory() {
         return rootDirectory.resolve("benchmark");
     }

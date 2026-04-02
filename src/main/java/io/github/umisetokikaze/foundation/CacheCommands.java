@@ -4,7 +4,9 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import io.github.umisetokikaze.Config;
 import io.github.umisetokikaze.foundation.cache.CacheModuleId;
+import io.github.umisetokikaze.foundation.cache.CacheResolution;
 import io.github.umisetokikaze.foundation.cache.CacheStatusSnapshot;
+import io.github.umisetokikaze.foundation.cache.ModuleCacheResolution;
 import io.github.umisetokikaze.foundation.cache.SafeCacheLayer;
 import java.util.Arrays;
 import java.util.Locale;
@@ -19,10 +21,23 @@ public final class CacheCommands {
     }
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher, ProfilingFoundation foundation) {
+        if (!Config.CACHE_COMMANDS_ENABLED.get()) {
+            return;
+        }
         dispatcher.register(Commands.literal("momooptimizer")
+                .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
                 .then(Commands.literal("cache")
                         .then(Commands.literal("status")
-                                .executes(context -> status(context.getSource(), foundation)))
+                                .executes(context -> status(context.getSource(), foundation, Optional.empty()))
+                                .then(Commands.argument("module", StringArgumentType.word())
+                                        .suggests((context, builder) -> {
+                                            Arrays.stream(CacheModuleId.values()).map(CacheModuleId::id).forEach(builder::suggest);
+                                            return builder.buildFuture();
+                                        })
+                                        .executes(context -> status(
+                                                context.getSource(),
+                                                foundation,
+                                                Optional.of(parseModule(StringArgumentType.getString(context, "module")))))))
                         .then(Commands.literal("purge")
                                 .executes(context -> purge(context.getSource(), foundation, Optional.empty()))
                                 .then(Commands.argument("module", StringArgumentType.word())
@@ -51,28 +66,36 @@ public final class CacheCommands {
                                 .executes(context -> benchmarkLog(context.getSource(), foundation)))));
     }
 
-    private static int status(CommandSourceStack source, ProfilingFoundation foundation) {
-        if (!Config.CACHE_COMMANDS_ENABLED.get()) {
-            source.sendFailure(Component.literal("Cache commands are disabled by config."));
-            return 0;
-        }
+    private static int status(CommandSourceStack source, ProfilingFoundation foundation, Optional<CacheModuleId> moduleFilter) {
         SafeCacheLayer cacheLayer = foundation.getSafeCacheLayer();
         Map<CacheModuleId, CacheStatusSnapshot> statuses = cacheLayer.statusSnapshot();
         source.sendSuccess(() -> Component.literal("Safe cache layer status:"), false);
-        statuses.values().forEach(status -> source.sendSuccess(
+        statuses.values().stream()
+                .filter(status -> moduleFilter.map(module -> module == status.module()).orElse(true))
+                .forEach(status -> source.sendSuccess(
                 () -> Component.literal(status.module().id()
                         + " enabled=" + status.enabled()
                         + " quarantined=" + status.quarantined()
                         + " rebuildRequested=" + status.rebuildRequested()
                         + " bytes=" + status.bytesUsed()
                         + " entries=" + status.entryCount()
+                        + " budgetMiB=" + status.budgetMiB()
+                        + " eviction=" + status.evictionPolicy()
+                        + " compatibility=" + status.compatibilityMode()
+                        + " debug=" + status.debugLogging()
+                        + " overBudget=" + status.overBudget()
                         + " integrityState=" + status.lastIntegrityState()
                         + " integrityReason=" + status.lastIntegrityReasonCode()
                         + " integrityFailures=" + status.integrityFailureCount()
                         + " lastReason=" + status.lastReasonCode()
                         + " detail=" + status.lastDetail()),
                 false));
-        return statuses.size();
+        moduleFilter.ifPresent(module -> cacheLayer.usageByDependencyDigest(module).forEach((digest, usage) -> source.sendSuccess(
+                () -> Component.literal("  digest=" + digest + " bytes=" + usage.bytesUsed() + " entries=" + usage.entryCount()),
+                false)));
+        return (int) statuses.values().stream()
+                .filter(status -> moduleFilter.map(module -> module == status.module()).orElse(true))
+                .count();
     }
 
     private static int purge(CommandSourceStack source, ProfilingFoundation foundation, Optional<CacheModuleId> module) {
@@ -82,10 +105,20 @@ public final class CacheCommands {
     }
 
     private static int rebuild(CommandSourceStack source, ProfilingFoundation foundation, Optional<CacheModuleId> module) {
+        SafeCacheLayer cacheLayer = foundation.getSafeCacheLayer();
         if (module.isPresent()) {
-            foundation.getSafeCacheLayer().markRebuildRequested(module.get());
+            if (!cacheLayer.markRebuildRequested(module.get())) {
+                source.sendFailure(Component.literal("Rebuild is suppressed by safe compatibility mode for " + module.get().id()));
+                return 0;
+            }
         } else {
-            Arrays.stream(CacheModuleId.values()).forEach(foundation.getSafeCacheLayer()::markRebuildRequested);
+            long scheduled = Arrays.stream(CacheModuleId.values())
+                    .filter(cacheLayer::markRebuildRequested)
+                    .count();
+            if (scheduled == 0L) {
+                source.sendFailure(Component.literal("Rebuild is suppressed by safe compatibility mode for all cache modules."));
+                return 0;
+            }
         }
         source.sendSuccess(() -> Component.literal("Rebuild scheduled for " + module.map(CacheModuleId::id).orElse("all")), true);
         return 1;
@@ -97,11 +130,23 @@ public final class CacheCommands {
             source.sendFailure(Component.literal("Fingerprint is not available on this runtime."));
             return 0;
         }
+        CacheResolution resolution = foundation.currentCacheResolution();
         source.sendSuccess(() -> Component.literal(
                 "fingerprint=" + snapshot.fingerprint()
                         + " warmCold=" + snapshot.executionTemperature()
                         + " configDigest=" + snapshot.configInputsDigest()),
                 false);
+        if (resolution != null) {
+            Arrays.stream(CacheModuleId.values()).forEach(module -> {
+                ModuleCacheResolution moduleResolution = resolution.resolutionFor(module);
+                source.sendSuccess(() -> Component.literal(
+                        module.id()
+                                + " dependencyDigest=" + moduleResolution.dependencyDigest()
+                                + " reuseAllowed=" + moduleResolution.reuseAllowed()
+                                + " reasons=" + moduleResolution.reasonDetail()),
+                        false);
+            });
+        }
         return 1;
     }
 
