@@ -66,6 +66,9 @@ public final class CacheCommands {
                         + " rebuildRequested=" + status.rebuildRequested()
                         + " bytes=" + status.bytesUsed()
                         + " entries=" + status.entryCount()
+                        + " integrityState=" + status.lastIntegrityState()
+                        + " integrityReason=" + status.lastIntegrityReasonCode()
+                        + " integrityFailures=" + status.integrityFailureCount()
                         + " lastReason=" + status.lastReasonCode()
                         + " detail=" + status.lastDetail()),
                 false));

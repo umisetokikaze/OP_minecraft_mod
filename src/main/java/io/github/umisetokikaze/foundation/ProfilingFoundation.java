@@ -196,6 +196,10 @@ public final class ProfilingFoundation {
         recordCacheUsage(currentFingerprint, module, bytesUsed, entryCount, budgetMiB);
     }
 
+    public void recordIntegrityResult(String module, String integrityState, String reasonCode) {
+        stats.recordIntegrityResult(module, integrityState, reasonCode);
+    }
+
     public void recordCacheUsage(
             PackFingerprintSnapshot fingerprintSnapshot,
             String module,

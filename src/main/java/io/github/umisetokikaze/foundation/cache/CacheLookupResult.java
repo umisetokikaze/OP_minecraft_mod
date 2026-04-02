@@ -12,6 +12,10 @@ public record CacheLookupResult<T>(
     }
 
     public static <T> CacheLookupResult<T> miss(InvalidationReason reason, String detail) {
-        return new CacheLookupResult<>(null, false, reason, detail == null ? "" : detail, null);
+        return miss(reason, detail, null);
+    }
+
+    public static <T> CacheLookupResult<T> miss(InvalidationReason reason, String detail, CacheEntryMetadata metadata) {
+        return new CacheLookupResult<>(null, false, reason, detail == null ? "" : detail, metadata);
     }
 }
