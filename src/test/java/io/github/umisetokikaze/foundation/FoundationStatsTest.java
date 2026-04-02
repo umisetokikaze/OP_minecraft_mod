@@ -16,6 +16,7 @@ class FoundationStatsTest {
         stats.setWarmColdState("warm");
         stats.recordCacheResult("foundation.pack_fingerprint.marker", true, "HIT", "");
         stats.recordCacheResult("foundation.pack_fingerprint.marker", false, "MISS_INVALIDATED", "fingerprint-changed");
+        stats.recordIntegrityResult("foundation.pack_fingerprint.marker", "INVALIDATED", "FINGERPRINT_CHANGED");
         stats.recordInvalidation("foundation.pack_fingerprint", "FINGERPRINT_CHANGED", "resource-pack-order");
         stats.recordInvalidation("foundation.pack_fingerprint", "FINGERPRINT_CHANGED", "resource-pack-order");
         stats.quarantine("foundation.pack_fingerprint", "IO_FAILURE", "marker-write-failed");
@@ -30,6 +31,9 @@ class FoundationStatsTest {
         assertEquals("foundation.pack_fingerprint.marker", cache.get("module").getAsString());
         assertEquals(1L, cache.get("hits").getAsLong());
         assertEquals(1L, cache.get("misses").getAsLong());
+        assertEquals("INVALIDATED", cache.get("lastIntegrityState").getAsString());
+        assertEquals("FINGERPRINT_CHANGED", cache.get("lastIntegrityReasonCode").getAsString());
+        assertEquals(1L, cache.get("integrityFailureCount").getAsLong());
         assertEquals("MISS_INVALIDATED", cache.get("lastReasonCode").getAsString());
 
         JsonArray invalidations = root.getAsJsonArray("invalidationReasons");

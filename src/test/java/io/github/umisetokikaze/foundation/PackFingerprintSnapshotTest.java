@@ -25,7 +25,8 @@ class PackFingerprintSnapshotTest {
                 "21.1.122",
                 List.of(mod),
                 List.of(pack),
-                Map.of("cache.enabled", "true"));
+                Map.of("cache.enabled", "true"),
+                "cfg123");
 
         JsonObject json = snapshot.toJson();
 
@@ -36,6 +37,7 @@ class PackFingerprintSnapshotTest {
         assertEquals("example", json.getAsJsonArray("mods").get(0).getAsJsonObject().get("modId").getAsString());
         assertEquals("vanilla", json.getAsJsonArray("resourcePacks").get(0).getAsJsonObject().get("id").getAsString());
         assertEquals("true", json.getAsJsonObject("configInputs").get("cache.enabled").getAsString());
+        assertEquals("cfg123", json.get("configInputsDigest").getAsString());
         assertEquals("phase1-pack-level-only", json.get("relevantFileHashMode").getAsString());
     }
 }

@@ -105,7 +105,8 @@ class BenchmarkHarnessTest {
                 "21.1.122",
                 List.of(),
                 List.of(),
-                Map.of("cacheMaxMiB", "2048"));
+                Map.of("cacheMaxMiB", "2048"),
+                "cfg123");
 
         harness.beginBenchmarkRun(snapshot);
         harness.finishStartupBenchmark(12_500_000L);
@@ -130,7 +131,8 @@ class BenchmarkHarnessTest {
                 "21.1.122",
                 List.of(),
                 List.of(),
-                Map.of("cacheMaxMiB", "2048"));
+                Map.of("cacheMaxMiB", "2048"),
+                "cfg123");
 
         harness.beginBenchmarkRun(snapshot);
         harness.finishStartupBenchmark(12_500_000L);

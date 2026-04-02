@@ -2,6 +2,7 @@ package io.github.umisetokikaze.foundation;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import io.github.umisetokikaze.foundation.cache.IntegrityState;
 import java.util.Comparator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -28,6 +29,11 @@ final class FoundationStats {
     void recordCacheResult(String module, boolean hit, String reasonCode, String detail) {
         cacheAggregates.computeIfAbsent(module, ignored -> new CacheAggregate())
                 .record(hit, reasonCode, detail);
+    }
+
+    void recordIntegrityResult(String module, String integrityState, String reasonCode) {
+        cacheAggregates.computeIfAbsent(module, ignored -> new CacheAggregate())
+                .recordIntegrity(integrityState, reasonCode);
     }
 
     void recordInvalidation(String module, String reasonCode, String detail) {
@@ -137,8 +143,11 @@ final class FoundationStats {
     private static final class CacheAggregate {
         private final LongAdder hits = new LongAdder();
         private final LongAdder misses = new LongAdder();
+        private final LongAdder integrityFailureCount = new LongAdder();
         private volatile String lastReasonCode = "NONE";
         private volatile String lastDetail = "";
+        private volatile String lastIntegrityState = IntegrityState.VALID.name();
+        private volatile String lastIntegrityReasonCode = "NONE";
 
         void record(boolean hit, String reasonCode, String detail) {
             if (hit) {
@@ -150,11 +159,22 @@ final class FoundationStats {
             lastDetail = detail == null ? "" : detail;
         }
 
+        void recordIntegrity(String integrityState, String reasonCode) {
+            lastIntegrityState = integrityState == null || integrityState.isBlank() ? IntegrityState.VALID.name() : integrityState;
+            lastIntegrityReasonCode = reasonCode == null || reasonCode.isBlank() ? "NONE" : reasonCode;
+            if (!IntegrityState.VALID.name().equals(lastIntegrityState)) {
+                integrityFailureCount.increment();
+            }
+        }
+
         JsonObject toJson(String module) {
             JsonObject json = new JsonObject();
             json.addProperty("module", module);
             json.addProperty("hits", hits.sum());
             json.addProperty("misses", misses.sum());
+            json.addProperty("lastIntegrityState", lastIntegrityState);
+            json.addProperty("lastIntegrityReasonCode", lastIntegrityReasonCode);
+            json.addProperty("integrityFailureCount", integrityFailureCount.sum());
             json.addProperty("lastReasonCode", lastReasonCode);
             json.addProperty("lastDetail", lastDetail);
             return json;
