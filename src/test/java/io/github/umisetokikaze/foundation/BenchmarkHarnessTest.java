@@ -43,7 +43,7 @@ class BenchmarkHarnessTest {
                 List.of(),
                 Map.of(),
                 Map.of("cacheMaxMiB", "2048"),
-                Map.of("resource_index", 1),
+                Map.of("resource_index", 2, "negative_lookup", 2),
                 "cfg123");
 
         harness.recordCacheResult(snapshot, "foundation.pack_fingerprint.marker", true, "HIT", "");
@@ -77,7 +77,7 @@ class BenchmarkHarnessTest {
                 List.of(),
                 Map.of(),
                 Map.of("cacheMaxMiB", "2048"),
-                Map.of("resource_index", 1),
+                Map.of("resource_index", 2, "negative_lookup", 2),
                 "cfg123");
         JsonObject stats = new JsonObject();
         stats.addProperty("warmColdState", "cold");
@@ -111,7 +111,7 @@ class BenchmarkHarnessTest {
                 List.of(),
                 Map.of(),
                 Map.of("cacheMaxMiB", "2048"),
-                Map.of("resource_index", 1),
+                Map.of("resource_index", 2, "negative_lookup", 2),
                 "cfg123");
 
         harness.beginBenchmarkRun(snapshot);
@@ -139,7 +139,7 @@ class BenchmarkHarnessTest {
                 List.of(),
                 Map.of(),
                 Map.of("cacheMaxMiB", "2048"),
-                Map.of("resource_index", 1),
+                Map.of("resource_index", 2, "negative_lookup", 2),
                 "cfg123");
 
         harness.beginBenchmarkRun(snapshot);

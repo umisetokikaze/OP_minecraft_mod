@@ -22,7 +22,7 @@ public record CacheModuleDescriptor(
             CacheModuleId.RESOURCE_INDEX,
             new CacheModuleDescriptor(
                     CacheModuleId.RESOURCE_INDEX,
-                    1,
+                    2,
                     true,
                     true,
                     true,
@@ -30,7 +30,7 @@ public record CacheModuleDescriptor(
             CacheModuleId.NEGATIVE_LOOKUP,
             new CacheModuleDescriptor(
                     CacheModuleId.NEGATIVE_LOOKUP,
-                    1,
+                    2,
                     true,
                     true,
                     true,

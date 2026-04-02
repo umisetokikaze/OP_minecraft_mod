@@ -56,7 +56,7 @@ class CacheResolverTest {
                 List.of(pack),
                 relevantFiles,
                 settings,
-                Map.of("resource_index", 1, "negative_lookup", 1),
+                Map.of("resource_index", 2, "negative_lookup", 2),
                 "cfg");
     }
 }

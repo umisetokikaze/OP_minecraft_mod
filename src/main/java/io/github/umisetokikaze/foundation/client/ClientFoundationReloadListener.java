@@ -7,7 +7,7 @@ import io.github.umisetokikaze.foundation.StageHandle;
 import io.github.umisetokikaze.foundation.cache.CacheResolution;
 import io.github.umisetokikaze.foundation.cache.CacheResolver;
 import io.github.umisetokikaze.foundation.cache.ResourceIndexCacheController;
-import io.github.umisetokikaze.foundation.cache.ResourceIndexSnapshot;
+import io.github.umisetokikaze.foundation.cache.ResourceIndexBundle;
 
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.SimplePreparableReloadListener;
@@ -33,8 +33,8 @@ final class ClientFoundationReloadListener extends SimplePreparableReloadListene
             PackFingerprintSnapshot snapshot = foundation.updateFingerprint(fingerprintService.capture(resourceManager));
             CacheResolution resolution = new CacheResolver().resolve(previousSnapshot, snapshot);
             foundation.updateCacheResolution(resolution);
-            ResourceIndexSnapshot resourceIndexSnapshot = cacheController.loadOrBuild(snapshot, resolution, resourceManager);
-            return new ReloadObservation(resourceManager.getNamespaces().size(), System.nanoTime(), snapshot, resolution, resourceIndexSnapshot);
+            ResourceIndexBundle resourceIndexBundle = cacheController.loadOrBuild(snapshot, resolution, resourceManager);
+            return new ReloadObservation(resourceManager.getNamespaces().size(), System.nanoTime(), snapshot, resolution, resourceIndexBundle);
         }
     }
 
@@ -45,8 +45,14 @@ final class ClientFoundationReloadListener extends SimplePreparableReloadListene
             foundation.recordCacheUsage(
                     observation.snapshot(),
                     "foundation.cache.resource_index.snapshot",
-                    observation.resourceIndexSnapshot().existenceSet().size(),
-                    observation.resourceIndexSnapshot().pathsByNamespace().size(),
+                    observation.resourceIndexBundle().resourceIndex().fileExistenceMap().size(),
+                    observation.resourceIndexBundle().resourceIndex().pathIndex().size(),
+                    io.github.umisetokikaze.Config.CACHE_MAX_MIB.get());
+            foundation.recordCacheUsage(
+                    observation.snapshot(),
+                    "foundation.cache.negative_lookup.snapshot",
+                    observation.resourceIndexBundle().negativeLookup().existingResources().size(),
+                    observation.resourceIndexBundle().negativeLookup().namespaceIndex().size(),
                     io.github.umisetokikaze.Config.CACHE_MAX_MIB.get());
             foundation.recordReloadObservation(observation.namespaceCount(), durationNanos);
             foundation.finishReloadSession(
@@ -63,6 +69,6 @@ final class ClientFoundationReloadListener extends SimplePreparableReloadListene
             long startedAtNanos,
             PackFingerprintSnapshot snapshot,
             CacheResolution resolution,
-            ResourceIndexSnapshot resourceIndexSnapshot) {
+            ResourceIndexBundle resourceIndexBundle) {
     }
 }
