@@ -58,6 +58,53 @@ class VersionedCacheStoreTest {
     }
 
     @Test
+    void roundTripsModelPipelineSnapshotsWithDedicatedEntryTypes() throws Exception {
+        VersionedCacheStore store = new VersionedCacheStore(tempDir, 1);
+
+        store.write(CacheModuleId.MODEL_JSON_PARSE, "dep1", "models", ModelJsonParseSnapshot.codec(), VersionedCacheStoreFixtures.sampleModelJsonParseSnapshot());
+        store.write(CacheModuleId.MODEL_PARENT_GRAPH, "dep1", "graph", ModelParentGraphSnapshot.codec(), VersionedCacheStoreFixtures.sampleModelParentGraphSnapshot());
+        store.write(CacheModuleId.BLOCKSTATE_EXPANSION, "dep1", "blockstates", BlockstateExpansionSnapshot.codec(), VersionedCacheStoreFixtures.sampleBlockstateExpansionSnapshot());
+        store.write(CacheModuleId.ATLAS_PLAN, "dep1", "atlas", AtlasPlanSnapshot.codec(), VersionedCacheStoreFixtures.sampleAtlasPlanSnapshot());
+
+        CacheLookupResult<ModelJsonParseSnapshot> modelParse = store.read(
+                CacheModuleId.MODEL_JSON_PARSE,
+                "dep1",
+                "models",
+                ModelJsonParseSnapshot.codec());
+        CacheLookupResult<ModelParentGraphSnapshot> parentGraph = store.read(
+                CacheModuleId.MODEL_PARENT_GRAPH,
+                "dep1",
+                "graph",
+                ModelParentGraphSnapshot.codec());
+        CacheLookupResult<BlockstateExpansionSnapshot> blockstates = store.read(
+                CacheModuleId.BLOCKSTATE_EXPANSION,
+                "dep1",
+                "blockstates",
+                BlockstateExpansionSnapshot.codec());
+        CacheLookupResult<AtlasPlanSnapshot> atlas = store.read(
+                CacheModuleId.ATLAS_PLAN,
+                "dep1",
+                "atlas",
+                AtlasPlanSnapshot.codec());
+
+        assertTrue(modelParse.hit());
+        assertEquals("model_json_parse", modelParse.metadata().entryType());
+        assertTrue(modelParse.value().modelsById().containsKey("example:item/a"));
+
+        assertTrue(parentGraph.hit());
+        assertEquals("model_parent_graph", parentGraph.metadata().entryType());
+        assertEquals("minecraft:item/generated", parentGraph.value().parentByModel().get("example:item/a"));
+
+        assertTrue(blockstates.hit());
+        assertEquals("blockstate_expansion", blockstates.metadata().entryType());
+        assertEquals(1, blockstates.value().totalVariantKeys());
+
+        assertTrue(atlas.hit());
+        assertEquals("atlas_plan", atlas.metadata().entryType());
+        assertTrue(atlas.value().textureDependenciesByAtlas().get("minecraft:blocks").contains("example:block/test_block"));
+    }
+
+    @Test
     void checksumMismatchInvalidatesSingleEntry() throws Exception {
         VersionedCacheStore store = new VersionedCacheStore(tempDir, 1);
         store.write(CacheModuleId.RESOURCE_INDEX, "dep1", "good", ResourceIndexSnapshot.codec(), VersionedCacheStoreFixtures.sampleResourceIndexSnapshot());

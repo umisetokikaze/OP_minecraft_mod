@@ -21,6 +21,7 @@ class CacheResolverTest {
 
         assertTrue(resolution.changedInputs().contains(InvalidationReason.SETTINGS_CHANGED));
         assertTrue(resolution.resolutionFor(CacheModuleId.RESOURCE_INDEX).reuseAllowed());
+        assertTrue(resolution.resolutionFor(CacheModuleId.MODEL_JSON_PARSE).reuseAllowed());
     }
 
     @Test
@@ -33,6 +34,9 @@ class CacheResolverTest {
 
         assertFalse(resolution.resolutionFor(CacheModuleId.RESOURCE_INDEX).reuseAllowed());
         assertEquals(InvalidationReason.RELEVANT_FILES_CHANGED, resolution.resolutionFor(CacheModuleId.RESOURCE_INDEX).primaryReason());
+        assertFalse(resolution.resolutionFor(CacheModuleId.MODEL_PARENT_GRAPH).reuseAllowed());
+        assertFalse(resolution.resolutionFor(CacheModuleId.BLOCKSTATE_EXPANSION).reuseAllowed());
+        assertFalse(resolution.resolutionFor(CacheModuleId.ATLAS_PLAN).reuseAllowed());
     }
 
     @Test
@@ -51,6 +55,7 @@ class CacheResolverTest {
 
         assertFalse(resolution.resolutionFor(CacheModuleId.RESOURCE_INDEX).reuseAllowed());
         assertTrue(resolution.resolutionFor(CacheModuleId.NEGATIVE_LOOKUP).reuseAllowed());
+        assertTrue(resolution.resolutionFor(CacheModuleId.MODEL_JSON_PARSE).reuseAllowed());
         assertEquals(InvalidationReason.SETTINGS_CHANGED, resolution.resolutionFor(CacheModuleId.RESOURCE_INDEX).primaryReason());
     }
 
@@ -75,7 +80,13 @@ class CacheResolverTest {
                 List.of(pack),
                 relevantFiles,
                 settings,
-                Map.of("resource_index", 2, "negative_lookup", 2),
+                Map.of(
+                        "resource_index", 2,
+                        "negative_lookup", 2,
+                        "model_json_parse", 1,
+                        "model_parent_graph", 1,
+                        "blockstate_expansion", 1,
+                        "atlas_plan", 1),
                 "cfg");
     }
 }

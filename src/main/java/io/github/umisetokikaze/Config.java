@@ -54,6 +54,22 @@ public final class Config {
             .comment("Enable the negative lookup cache module.")
             .define("cache.negativeLookup.enabled", true);
 
+    public static final ModConfigSpec.BooleanValue CACHE_MODEL_JSON_PARSE_ENABLED = BUILDER
+            .comment("Enable the model JSON parse cache module.")
+            .define("cache.modelJsonParse.enabled", true);
+
+    public static final ModConfigSpec.BooleanValue CACHE_MODEL_PARENT_GRAPH_ENABLED = BUILDER
+            .comment("Enable the model parent graph cache module.")
+            .define("cache.modelParentGraph.enabled", true);
+
+    public static final ModConfigSpec.BooleanValue CACHE_BLOCKSTATE_EXPANSION_ENABLED = BUILDER
+            .comment("Enable the blockstate expansion cache module.")
+            .define("cache.blockstateExpansion.enabled", true);
+
+    public static final ModConfigSpec.BooleanValue CACHE_ATLAS_PLAN_ENABLED = BUILDER
+            .comment("Enable the atlas plan cache module.")
+            .define("cache.atlasPlan.enabled", true);
+
     public static final ModConfigSpec.BooleanValue CACHE_COMMANDS_ENABLED = BUILDER
             .comment("Enable cache management commands.")
             .define("cache.commands.enabled", true);
@@ -110,6 +126,70 @@ public final class Config {
             .comment("Override negative lookup compatibility mode. Expected values: inherit, standard, safe.")
             .define("cache.negativeLookup.compatibilityMode", "inherit", Config::isModuleCompatibilityMode);
 
+    public static final ModConfigSpec.IntValue CACHE_MODEL_JSON_PARSE_MAX_MIB = BUILDER
+            .comment("Override model JSON parse cache budget in MiB. Use -1 to inherit the global budget.")
+            .defineInRange("cache.modelJsonParse.maxMiB", -1, -1, 1024 * 1024);
+
+    public static final ModConfigSpec.ConfigValue<String> CACHE_MODEL_JSON_PARSE_EVICTION_POLICY = BUILDER
+            .comment("Override model JSON parse cache eviction policy. Expected values: inherit, lru, none.")
+            .define("cache.modelJsonParse.evictionPolicy", "inherit", Config::isModuleEvictionPolicy);
+
+    public static final ModConfigSpec.ConfigValue<String> CACHE_MODEL_JSON_PARSE_DEBUG_LOGGING = BUILDER
+            .comment("Override model JSON parse cache debug logging. Expected values: inherit, enabled, disabled.")
+            .define("cache.modelJsonParse.debugLogging", "inherit", Config::isModuleDebugLoggingSetting);
+
+    public static final ModConfigSpec.ConfigValue<String> CACHE_MODEL_JSON_PARSE_COMPATIBILITY_MODE = BUILDER
+            .comment("Override model JSON parse cache compatibility mode. Expected values: inherit, standard, safe.")
+            .define("cache.modelJsonParse.compatibilityMode", "inherit", Config::isModuleCompatibilityMode);
+
+    public static final ModConfigSpec.IntValue CACHE_MODEL_PARENT_GRAPH_MAX_MIB = BUILDER
+            .comment("Override model parent graph cache budget in MiB. Use -1 to inherit the global budget.")
+            .defineInRange("cache.modelParentGraph.maxMiB", -1, -1, 1024 * 1024);
+
+    public static final ModConfigSpec.ConfigValue<String> CACHE_MODEL_PARENT_GRAPH_EVICTION_POLICY = BUILDER
+            .comment("Override model parent graph cache eviction policy. Expected values: inherit, lru, none.")
+            .define("cache.modelParentGraph.evictionPolicy", "inherit", Config::isModuleEvictionPolicy);
+
+    public static final ModConfigSpec.ConfigValue<String> CACHE_MODEL_PARENT_GRAPH_DEBUG_LOGGING = BUILDER
+            .comment("Override model parent graph cache debug logging. Expected values: inherit, enabled, disabled.")
+            .define("cache.modelParentGraph.debugLogging", "inherit", Config::isModuleDebugLoggingSetting);
+
+    public static final ModConfigSpec.ConfigValue<String> CACHE_MODEL_PARENT_GRAPH_COMPATIBILITY_MODE = BUILDER
+            .comment("Override model parent graph cache compatibility mode. Expected values: inherit, standard, safe.")
+            .define("cache.modelParentGraph.compatibilityMode", "inherit", Config::isModuleCompatibilityMode);
+
+    public static final ModConfigSpec.IntValue CACHE_BLOCKSTATE_EXPANSION_MAX_MIB = BUILDER
+            .comment("Override blockstate expansion cache budget in MiB. Use -1 to inherit the global budget.")
+            .defineInRange("cache.blockstateExpansion.maxMiB", -1, -1, 1024 * 1024);
+
+    public static final ModConfigSpec.ConfigValue<String> CACHE_BLOCKSTATE_EXPANSION_EVICTION_POLICY = BUILDER
+            .comment("Override blockstate expansion cache eviction policy. Expected values: inherit, lru, none.")
+            .define("cache.blockstateExpansion.evictionPolicy", "inherit", Config::isModuleEvictionPolicy);
+
+    public static final ModConfigSpec.ConfigValue<String> CACHE_BLOCKSTATE_EXPANSION_DEBUG_LOGGING = BUILDER
+            .comment("Override blockstate expansion cache debug logging. Expected values: inherit, enabled, disabled.")
+            .define("cache.blockstateExpansion.debugLogging", "inherit", Config::isModuleDebugLoggingSetting);
+
+    public static final ModConfigSpec.ConfigValue<String> CACHE_BLOCKSTATE_EXPANSION_COMPATIBILITY_MODE = BUILDER
+            .comment("Override blockstate expansion cache compatibility mode. Expected values: inherit, standard, safe.")
+            .define("cache.blockstateExpansion.compatibilityMode", "inherit", Config::isModuleCompatibilityMode);
+
+    public static final ModConfigSpec.IntValue CACHE_ATLAS_PLAN_MAX_MIB = BUILDER
+            .comment("Override atlas plan cache budget in MiB. Use -1 to inherit the global budget.")
+            .defineInRange("cache.atlasPlan.maxMiB", -1, -1, 1024 * 1024);
+
+    public static final ModConfigSpec.ConfigValue<String> CACHE_ATLAS_PLAN_EVICTION_POLICY = BUILDER
+            .comment("Override atlas plan cache eviction policy. Expected values: inherit, lru, none.")
+            .define("cache.atlasPlan.evictionPolicy", "inherit", Config::isModuleEvictionPolicy);
+
+    public static final ModConfigSpec.ConfigValue<String> CACHE_ATLAS_PLAN_DEBUG_LOGGING = BUILDER
+            .comment("Override atlas plan cache debug logging. Expected values: inherit, enabled, disabled.")
+            .define("cache.atlasPlan.debugLogging", "inherit", Config::isModuleDebugLoggingSetting);
+
+    public static final ModConfigSpec.ConfigValue<String> CACHE_ATLAS_PLAN_COMPATIBILITY_MODE = BUILDER
+            .comment("Override atlas plan cache compatibility mode. Expected values: inherit, standard, safe.")
+            .define("cache.atlasPlan.compatibilityMode", "inherit", Config::isModuleCompatibilityMode);
+
     public static final ModConfigSpec.ConfigValue<String> WORLD_ENTRY_STAGING_INTENSITY = BUILDER
             .comment("World-entry staging intensity placeholder. Expected values: off, conservative, aggressive.")
             .define("worldEntry.stagingIntensity", "conservative");
@@ -144,6 +224,10 @@ public final class Config {
         values.put("cacheGlobalEnabled", String.valueOf(CACHE_GLOBAL_ENABLED.get()));
         values.put("cacheResourceIndexEnabled", String.valueOf(CACHE_RESOURCE_INDEX_ENABLED.get()));
         values.put("cacheNegativeLookupEnabled", String.valueOf(CACHE_NEGATIVE_LOOKUP_ENABLED.get()));
+        values.put("cacheModelJsonParseEnabled", String.valueOf(CACHE_MODEL_JSON_PARSE_ENABLED.get()));
+        values.put("cacheModelParentGraphEnabled", String.valueOf(CACHE_MODEL_PARENT_GRAPH_ENABLED.get()));
+        values.put("cacheBlockstateExpansionEnabled", String.valueOf(CACHE_BLOCKSTATE_EXPANSION_ENABLED.get()));
+        values.put("cacheAtlasPlanEnabled", String.valueOf(CACHE_ATLAS_PLAN_ENABLED.get()));
         values.put("cacheCommandsEnabled", String.valueOf(CACHE_COMMANDS_ENABLED.get()));
         values.put("cacheIntegrityStrict", String.valueOf(CACHE_INTEGRITY_STRICT.get()));
         values.put("cacheRebuildOnMiss", String.valueOf(CACHE_REBUILD_ON_MISS.get()));
@@ -159,6 +243,22 @@ public final class Config {
         values.put("cacheNegativeLookupEvictionPolicy", CACHE_NEGATIVE_LOOKUP_EVICTION_POLICY.get());
         values.put("cacheNegativeLookupDebugLogging", CACHE_NEGATIVE_LOOKUP_DEBUG_LOGGING.get());
         values.put("cacheNegativeLookupCompatibilityMode", CACHE_NEGATIVE_LOOKUP_COMPATIBILITY_MODE.get());
+        values.put("cacheModelJsonParseMaxMiB", String.valueOf(CACHE_MODEL_JSON_PARSE_MAX_MIB.get()));
+        values.put("cacheModelJsonParseEvictionPolicy", CACHE_MODEL_JSON_PARSE_EVICTION_POLICY.get());
+        values.put("cacheModelJsonParseDebugLogging", CACHE_MODEL_JSON_PARSE_DEBUG_LOGGING.get());
+        values.put("cacheModelJsonParseCompatibilityMode", CACHE_MODEL_JSON_PARSE_COMPATIBILITY_MODE.get());
+        values.put("cacheModelParentGraphMaxMiB", String.valueOf(CACHE_MODEL_PARENT_GRAPH_MAX_MIB.get()));
+        values.put("cacheModelParentGraphEvictionPolicy", CACHE_MODEL_PARENT_GRAPH_EVICTION_POLICY.get());
+        values.put("cacheModelParentGraphDebugLogging", CACHE_MODEL_PARENT_GRAPH_DEBUG_LOGGING.get());
+        values.put("cacheModelParentGraphCompatibilityMode", CACHE_MODEL_PARENT_GRAPH_COMPATIBILITY_MODE.get());
+        values.put("cacheBlockstateExpansionMaxMiB", String.valueOf(CACHE_BLOCKSTATE_EXPANSION_MAX_MIB.get()));
+        values.put("cacheBlockstateExpansionEvictionPolicy", CACHE_BLOCKSTATE_EXPANSION_EVICTION_POLICY.get());
+        values.put("cacheBlockstateExpansionDebugLogging", CACHE_BLOCKSTATE_EXPANSION_DEBUG_LOGGING.get());
+        values.put("cacheBlockstateExpansionCompatibilityMode", CACHE_BLOCKSTATE_EXPANSION_COMPATIBILITY_MODE.get());
+        values.put("cacheAtlasPlanMaxMiB", String.valueOf(CACHE_ATLAS_PLAN_MAX_MIB.get()));
+        values.put("cacheAtlasPlanEvictionPolicy", CACHE_ATLAS_PLAN_EVICTION_POLICY.get());
+        values.put("cacheAtlasPlanDebugLogging", CACHE_ATLAS_PLAN_DEBUG_LOGGING.get());
+        values.put("cacheAtlasPlanCompatibilityMode", CACHE_ATLAS_PLAN_COMPATIBILITY_MODE.get());
         values.put("worldEntryStagingIntensity", WORLD_ENTRY_STAGING_INTENSITY.get());
         values.put("relevantFingerprintPaths", RELEVANT_FINGERPRINT_PATHS.get().stream()
                 .map(String::valueOf)
@@ -207,6 +307,34 @@ public final class Config {
                     CACHE_NEGATIVE_LOOKUP_EVICTION_POLICY.get(),
                     CACHE_NEGATIVE_LOOKUP_DEBUG_LOGGING.get(),
                     CACHE_NEGATIVE_LOOKUP_COMPATIBILITY_MODE.get());
+            case MODEL_JSON_PARSE -> moduleSettings(
+                    module,
+                    CACHE_MODEL_JSON_PARSE_ENABLED.get(),
+                    CACHE_MODEL_JSON_PARSE_MAX_MIB.get(),
+                    CACHE_MODEL_JSON_PARSE_EVICTION_POLICY.get(),
+                    CACHE_MODEL_JSON_PARSE_DEBUG_LOGGING.get(),
+                    CACHE_MODEL_JSON_PARSE_COMPATIBILITY_MODE.get());
+            case MODEL_PARENT_GRAPH -> moduleSettings(
+                    module,
+                    CACHE_MODEL_PARENT_GRAPH_ENABLED.get(),
+                    CACHE_MODEL_PARENT_GRAPH_MAX_MIB.get(),
+                    CACHE_MODEL_PARENT_GRAPH_EVICTION_POLICY.get(),
+                    CACHE_MODEL_PARENT_GRAPH_DEBUG_LOGGING.get(),
+                    CACHE_MODEL_PARENT_GRAPH_COMPATIBILITY_MODE.get());
+            case BLOCKSTATE_EXPANSION -> moduleSettings(
+                    module,
+                    CACHE_BLOCKSTATE_EXPANSION_ENABLED.get(),
+                    CACHE_BLOCKSTATE_EXPANSION_MAX_MIB.get(),
+                    CACHE_BLOCKSTATE_EXPANSION_EVICTION_POLICY.get(),
+                    CACHE_BLOCKSTATE_EXPANSION_DEBUG_LOGGING.get(),
+                    CACHE_BLOCKSTATE_EXPANSION_COMPATIBILITY_MODE.get());
+            case ATLAS_PLAN -> moduleSettings(
+                    module,
+                    CACHE_ATLAS_PLAN_ENABLED.get(),
+                    CACHE_ATLAS_PLAN_MAX_MIB.get(),
+                    CACHE_ATLAS_PLAN_EVICTION_POLICY.get(),
+                    CACHE_ATLAS_PLAN_DEBUG_LOGGING.get(),
+                    CACHE_ATLAS_PLAN_COMPATIBILITY_MODE.get());
         };
     }
 

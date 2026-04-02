@@ -54,7 +54,13 @@ class ResourceIndexCacheControllerTest {
                 List.of(pack0, pack1),
                 Map.of(),
                 Map.of("compatibilityMode", "standard"),
-                Map.of("resource_index", 2, "negative_lookup", 2),
+                Map.of(
+                        "resource_index", 2,
+                        "negative_lookup", 2,
+                        "model_json_parse", 1,
+                        "model_parent_graph", 1,
+                        "blockstate_expansion", 1,
+                        "atlas_plan", 1),
                 "cfg");
     }
 }
