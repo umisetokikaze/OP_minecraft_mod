@@ -1,14 +1,18 @@
 package io.github.umisetokikaze.foundation;
 
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import io.github.umisetokikaze.Config;
+import io.github.umisetokikaze.foundation.cache.CacheModuleDescriptor;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.PathMatcher;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -23,6 +27,9 @@ import java.util.stream.Collectors;
 
 import net.minecraft.SharedConstants;
 import net.minecraft.client.Minecraft;
+import net.minecraft.resources.Identifier;
+import net.minecraft.server.packs.resources.Resource;
+import net.minecraft.server.packs.resources.ResourceManager;
 import net.neoforged.fml.ModList;
 
 public final class PackFingerprintService {
@@ -37,7 +44,12 @@ public final class PackFingerprintService {
     }
 
     public PackFingerprintSnapshot capture() {
+        return capture(null);
+    }
+
+    public PackFingerprintSnapshot capture(ResourceManager resourceManager) {
         Map<String, String> configInputs = Config.fingerprintInputs();
+        Map<String, String> relevantFileHashes;
         String minecraftVersion;
         List<JsonObject> mods;
         List<JsonObject> packs;
@@ -64,8 +76,12 @@ public final class PackFingerprintService {
             packs = collectResourcePacks();
         }
 
+        try (StageProfiler.StageScope ignored = profiler.begin("foundation.fingerprint.relevant_files")) {
+            relevantFileHashes = collectRelevantFileHashes(resourceManager);
+        }
+
         try (StageProfiler.StageScope ignored = profiler.begin("foundation.fingerprint.digest")) {
-            String canonical = buildCanonicalInput(minecraftVersion, neoForgeVersion, mods, packs, configInputs);
+            String canonical = buildCanonicalInput(minecraftVersion, neoForgeVersion, mods, packs, relevantFileHashes, configInputs);
             String fingerprint = sha256Hex(canonical.getBytes(StandardCharsets.UTF_8));
             String configInputsDigest = sha256Hex(configInputs.entrySet().stream()
                     .map(entry -> entry.getKey() + "=" + entry.getValue())
@@ -79,7 +95,9 @@ public final class PackFingerprintService {
                     neoForgeVersion,
                     mods,
                     packs,
+                    relevantFileHashes,
                     configInputs,
+                    CacheModuleDescriptor.schemaVersionsByModuleId(),
                     configInputsDigest);
         }
     }
@@ -91,9 +109,27 @@ public final class PackFingerprintService {
                     fingerprintDirectory.resolve(snapshot.fingerprint() + ".json"),
                     snapshot.toJson().toString(),
                     StandardCharsets.UTF_8);
+            Files.writeString(
+                    fingerprintDirectory.resolve("latest.json"),
+                    snapshot.toJson().toString(),
+                    StandardCharsets.UTF_8);
         } catch (IOException exception) {
             foundation.recordInvalidation(snapshot, "foundation.pack_fingerprint", "MARKER_WRITE_FAILED", exception.getClass().getSimpleName());
             foundation.quarantine(snapshot, "foundation.pack_fingerprint", "IO_FAILURE", "marker-write-failed");
+        }
+    }
+
+    public Optional<PackFingerprintSnapshot> loadLatestSnapshot() {
+        Path latestPath = fingerprintDirectory.resolve("latest.json");
+        if (!Files.exists(latestPath)) {
+            return Optional.empty();
+        }
+        try {
+            JsonObject json = JsonParser.parseString(Files.readString(latestPath, StandardCharsets.UTF_8)).getAsJsonObject();
+            return Optional.of(PackFingerprintSnapshot.fromJson(json));
+        } catch (IOException | RuntimeException exception) {
+            foundation.recordInvalidation("foundation.pack_fingerprint", "MARKER_READ_FAILED", exception.getClass().getSimpleName());
+            return Optional.empty();
         }
     }
 
@@ -189,16 +225,54 @@ public final class PackFingerprintService {
             String neoForgeVersion,
             List<JsonObject> mods,
             List<JsonObject> packs,
+            Map<String, String> relevantFileHashes,
             Map<String, String> configInputs) {
         Map<String, String> canonical = new LinkedHashMap<>();
         canonical.put("minecraftVersion", minecraftVersion);
         canonical.put("neoForgeVersion", neoForgeVersion);
         canonical.put("mods", mods.stream().map(JsonObject::toString).collect(Collectors.joining("|")));
         canonical.put("resourcePacks", packs.stream().map(JsonObject::toString).collect(Collectors.joining("|")));
+        canonical.put("relevantFileHashes", relevantFileHashes.entrySet().stream()
+                .map(entry -> entry.getKey() + "=" + entry.getValue())
+                .collect(Collectors.joining("|")));
         configInputs.forEach(canonical::put);
         return canonical.entrySet().stream()
                 .map(entry -> entry.getKey() + "=" + entry.getValue())
                 .collect(Collectors.joining("\n"));
+    }
+
+    private Map<String, String> collectRelevantFileHashes(ResourceManager resourceManager) {
+        if (resourceManager == null) {
+            return Map.of();
+        }
+
+        List<PathMatcher> matchers = Config.RELEVANT_FINGERPRINT_PATHS.get().stream()
+                .map(String::valueOf)
+                .map(pattern -> FileSystems.getDefault().getPathMatcher("glob:" + pattern.replace('\\', '/')))
+                .toList();
+        Map<String, String> hashes = new LinkedHashMap<>();
+        for (Map.Entry<Identifier, Resource> entry : resourceManager.listResources("", path -> true).entrySet()) {
+            String candidatePath = "assets/" + entry.getKey().getNamespace() + "/" + entry.getKey().getPath();
+            if (!matchesRelevantPath(candidatePath, matchers)) {
+                continue;
+            }
+            try (InputStream stream = entry.getValue().open()) {
+                hashes.put(candidatePath, sha256Hex(stream.readAllBytes()));
+            } catch (IOException exception) {
+                hashes.put(candidatePath, "unavailable");
+            }
+        }
+        return Map.copyOf(hashes);
+    }
+
+    private boolean matchesRelevantPath(String candidatePath, List<PathMatcher> matchers) {
+        Path path = Path.of(candidatePath);
+        for (PathMatcher matcher : matchers) {
+            if (matcher.matches(path)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String safeHash(Path filePath) {

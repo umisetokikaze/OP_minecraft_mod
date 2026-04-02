@@ -1,7 +1,6 @@
 package io.github.umisetokikaze.foundation.client;
 
 import io.github.umisetokikaze.Config;
-import io.github.umisetokikaze.foundation.PackFingerprintSnapshot;
 import io.github.umisetokikaze.foundation.ProfilingFoundation;
 import io.github.umisetokikaze.foundation.StageHandle;
 import io.github.umisetokikaze.momooptimizer;
@@ -41,21 +40,11 @@ public final class ClientProfilingController {
 
     private void onClientSetup(FMLClientSetupEvent event) {
         event.enqueueWork(() -> {
-            if (!Config.FOUNDATION_ENABLED.get() || !Config.PACK_FINGERPRINT_ENABLED.get()) {
+            if (!Config.FOUNDATION_ENABLED.get()) {
                 return;
             }
             try (var ignored = foundation.beginStage("foundation.client_setup")) {
-                PackFingerprintSnapshot snapshot = foundation.createFingerprintService().capture();
-                foundation.updateFingerprint(snapshot);
-                momooptimizer.LOGGER.info(
-                        "Pack fingerprint={} warmCold={} mods={} packs={}",
-                        snapshot.fingerprint(),
-                        snapshot.executionTemperature(),
-                        snapshot.mods().size(),
-                        snapshot.resourcePacks().size());
-            } catch (RuntimeException exception) {
-                foundation.quarantine("foundation.pack_fingerprint", "capture-failed");
-                momooptimizer.LOGGER.warn("Failed to capture pack fingerprint", exception);
+                momooptimizer.LOGGER.info("Profiling foundation client hooks registered");
             }
         });
     }

@@ -24,12 +24,11 @@ class VersionedCacheStoreTest {
         VersionedCacheStore store = new VersionedCacheStore(tempDir, 1);
         ResourceIndexSnapshot snapshot = sampleSnapshot(Set.of("example:item/a.json"), Set.of("example:missing.json"));
 
-        store.write(CacheModuleId.RESOURCE_INDEX, "fp1", "cfg1", "entry", ResourceIndexSnapshot.codec("resource_index"), snapshot);
+        store.write(CacheModuleId.RESOURCE_INDEX, "dep1", "entry", ResourceIndexSnapshot.codec("resource_index"), snapshot);
 
         CacheLookupResult<ResourceIndexSnapshot> result = store.read(
                 CacheModuleId.RESOURCE_INDEX,
-                "fp1",
-                "cfg1",
+                "dep1",
                 "entry",
                 ResourceIndexSnapshot.codec("resource_index"));
 
@@ -37,19 +36,18 @@ class VersionedCacheStoreTest {
         assertEquals(snapshot.existenceSet(), result.value().existenceSet());
         assertEquals(snapshot.negativeLookupSet(), result.value().negativeLookupSet());
         assertEquals(1, result.metadata().schemaVersion());
-        assertEquals("fp1", result.metadata().fingerprint());
+        assertEquals("dep1", result.metadata().dependencyDigest());
         assertEquals("resource_index", result.metadata().entryType());
-        assertEquals("cfg1", result.metadata().configDigest());
         assertEquals(IntegrityState.VALID, result.metadata().integrityState());
     }
 
     @Test
     void checksumMismatchInvalidatesSingleEntry() throws Exception {
         VersionedCacheStore store = new VersionedCacheStore(tempDir, 1);
-        store.write(CacheModuleId.RESOURCE_INDEX, "fp1", "cfg1", "good", ResourceIndexSnapshot.codec("resource_index"), sampleSnapshot(Set.of("example:item/a.json"), Set.of()));
-        store.write(CacheModuleId.RESOURCE_INDEX, "fp1", "cfg1", "bad", ResourceIndexSnapshot.codec("resource_index"), sampleSnapshot(Set.of("example:item/b.json"), Set.of()));
+        store.write(CacheModuleId.RESOURCE_INDEX, "dep1", "good", ResourceIndexSnapshot.codec("resource_index"), sampleSnapshot(Set.of("example:item/a.json"), Set.of()));
+        store.write(CacheModuleId.RESOURCE_INDEX, "dep1", "bad", ResourceIndexSnapshot.codec("resource_index"), sampleSnapshot(Set.of("example:item/b.json"), Set.of()));
 
-        Path fingerprintDir = tempDir.resolve("schema-v1").resolve("resource_index").resolve("fp1");
+        Path fingerprintDir = tempDir.resolve("schema-v1").resolve("resource_index").resolve("dep1");
         Files.writeString(
                 fingerprintDir.resolve("bad.data.json"),
                 "{\"corrupt\":true}",
@@ -57,14 +55,12 @@ class VersionedCacheStoreTest {
 
         CacheLookupResult<ResourceIndexSnapshot> bad = store.read(
                 CacheModuleId.RESOURCE_INDEX,
-                "fp1",
-                "cfg1",
+                "dep1",
                 "bad",
                 ResourceIndexSnapshot.codec("resource_index"));
         CacheLookupResult<ResourceIndexSnapshot> good = store.read(
                 CacheModuleId.RESOURCE_INDEX,
-                "fp1",
-                "cfg1",
+                "dep1",
                 "good",
                 ResourceIndexSnapshot.codec("resource_index"));
 
@@ -80,16 +76,15 @@ class VersionedCacheStoreTest {
     @Test
     void entryTypeMismatchDiscardsSingleEntry() throws Exception {
         VersionedCacheStore store = new VersionedCacheStore(tempDir, 1);
-        store.write(CacheModuleId.RESOURCE_INDEX, "fp1", "cfg1", "typed", ResourceIndexSnapshot.codec("resource_index"), sampleSnapshot(Set.of("example:item/a.json"), Set.of()));
+        store.write(CacheModuleId.RESOURCE_INDEX, "dep1", "typed", ResourceIndexSnapshot.codec("resource_index"), sampleSnapshot(Set.of("example:item/a.json"), Set.of()));
 
         CacheLookupResult<ResourceIndexSnapshot> result = store.read(
                 CacheModuleId.RESOURCE_INDEX,
-                "fp1",
-                "cfg1",
+                "dep1",
                 "typed",
                 ResourceIndexSnapshot.codec("negative_lookup"));
 
-        Path fingerprintDir = tempDir.resolve("schema-v1").resolve("resource_index").resolve("fp1");
+        Path fingerprintDir = tempDir.resolve("schema-v1").resolve("resource_index").resolve("dep1");
         assertFalse(result.hit());
         assertEquals(InvalidationReason.ENTRY_TYPE_MISMATCH, result.reason());
         assertNotNull(result.metadata());
@@ -101,17 +96,16 @@ class VersionedCacheStoreTest {
     @Test
     void fingerprintMismatchDiscardsSingleEntry() throws Exception {
         VersionedCacheStore store = new VersionedCacheStore(tempDir, 1);
-        store.write(CacheModuleId.RESOURCE_INDEX, "fp1", "cfg1", "entry", ResourceIndexSnapshot.codec("resource_index"), sampleSnapshot(Set.of("example:item/a.json"), Set.of()));
+        store.write(CacheModuleId.RESOURCE_INDEX, "dep1", "entry", ResourceIndexSnapshot.codec("resource_index"), sampleSnapshot(Set.of("example:item/a.json"), Set.of()));
 
-        Path fingerprintDir = tempDir.resolve("schema-v1").resolve("resource_index").resolve("fp1");
+        Path fingerprintDir = tempDir.resolve("schema-v1").resolve("resource_index").resolve("dep1");
         Path metaPath = fingerprintDir.resolve("entry.meta.json");
-        String rewritten = Files.readString(metaPath, StandardCharsets.UTF_8).replace("\"fingerprint\": \"fp1\"", "\"fingerprint\": \"fp-other\"");
+        String rewritten = Files.readString(metaPath, StandardCharsets.UTF_8).replace("\"dependencyDigest\": \"dep1\"", "\"dependencyDigest\": \"dep-other\"");
         Files.writeString(metaPath, rewritten, StandardCharsets.UTF_8);
 
         CacheLookupResult<ResourceIndexSnapshot> result = store.read(
                 CacheModuleId.RESOURCE_INDEX,
-                "fp1",
-                "cfg1",
+                "dep1",
                 "entry",
                 ResourceIndexSnapshot.codec("resource_index"));
 
@@ -128,8 +122,7 @@ class VersionedCacheStoreTest {
         VersionedCacheStore store = new VersionedCacheStore(tempDir, 1);
         CacheEntryMetadata written = store.write(
                 CacheModuleId.RESOURCE_INDEX,
-                "fp1",
-                "cfg1",
+                "dep1",
                 "entry",
                 ResourceIndexSnapshot.codec("resource_index"),
                 sampleSnapshot(Set.of("example:item/a.json"), Set.of()));
@@ -138,8 +131,7 @@ class VersionedCacheStoreTest {
 
         CacheLookupResult<ResourceIndexSnapshot> result = store.read(
                 CacheModuleId.RESOURCE_INDEX,
-                "fp1",
-                "cfg1",
+                "dep1",
                 "entry",
                 ResourceIndexSnapshot.codec("resource_index"));
 
@@ -151,9 +143,9 @@ class VersionedCacheStoreTest {
     @Test
     void evictsLeastRecentlyUsedEntriesWhenBudgetExceeded() throws Exception {
         VersionedCacheStore store = new VersionedCacheStore(tempDir, 1);
-        store.write(CacheModuleId.RESOURCE_INDEX, "fp1", "cfg1", "first", ResourceIndexSnapshot.codec("resource_index"), sampleSnapshot(Set.of("example:item/a.json"), Set.of()));
+        store.write(CacheModuleId.RESOURCE_INDEX, "dep1", "first", ResourceIndexSnapshot.codec("resource_index"), sampleSnapshot(Set.of("example:item/a.json"), Set.of()));
         Thread.sleep(5L);
-        store.write(CacheModuleId.RESOURCE_INDEX, "fp1", "cfg1", "second", ResourceIndexSnapshot.codec("resource_index"), sampleSnapshot(Set.of("example:item/very_large_name_that_pushes_budget.json"), Set.of()));
+        store.write(CacheModuleId.RESOURCE_INDEX, "dep1", "second", ResourceIndexSnapshot.codec("resource_index"), sampleSnapshot(Set.of("example:item/very_large_name_that_pushes_budget.json"), Set.of()));
 
         long targetBudget = 10L;
         var evicted = store.evictLeastRecentlyUsed(targetBudget, java.util.Optional.of(CacheModuleId.RESOURCE_INDEX));

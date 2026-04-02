@@ -33,12 +33,11 @@ public final class VersionedCacheStore {
 
     public <T> CacheLookupResult<T> read(
             CacheModuleId module,
-            String fingerprint,
-            String configDigest,
+            String dependencyDigest,
             String entryKey,
             CachePayloadCodec<T> codec) {
-        Path metaPath = metaPath(module, fingerprint, entryKey);
-        Path dataPath = dataPath(module, fingerprint, entryKey);
+        Path metaPath = metaPath(module, dependencyDigest, entryKey);
+        Path dataPath = dataPath(module, dependencyDigest, entryKey);
         if (!Files.exists(metaPath) || !Files.exists(dataPath)) {
             return CacheLookupResult.miss(InvalidationReason.ENTRY_MISSING, entryKey);
         }
@@ -50,7 +49,7 @@ public final class VersionedCacheStore {
                 discardEntry(metaPath, dataPath);
                 return CacheLookupResult.miss(InvalidationReason.SCHEMA_MISMATCH, entryKey, withIntegrityState(metadata, IntegrityState.INVALIDATED));
             }
-            if (!metadata.fingerprint().equals(fingerprint) || !metadata.configDigest().equals(configDigest)) {
+            if (!metadata.dependencyDigest().equals(dependencyDigest)) {
                 discardEntry(metaPath, dataPath);
                 return CacheLookupResult.miss(InvalidationReason.FINGERPRINT_CHANGED, entryKey, withIntegrityState(metadata, IntegrityState.INVALIDATED));
             }
@@ -70,14 +69,13 @@ public final class VersionedCacheStore {
             long now = Instant.now().toEpochMilli();
             CacheEntryMetadata refreshedMetadata = new CacheEntryMetadata(
                     metadata.schemaVersion(),
-                    metadata.fingerprint(),
+                    metadata.dependencyDigest(),
                     metadata.entryType(),
                     metadata.checksum(),
                     metadata.createdAtEpochMillis(),
                     now,
                     metadata.sizeBytes(),
-                    IntegrityState.VALID,
-                    metadata.configDigest());
+                    IntegrityState.VALID);
             writeMetadata(metaPath, refreshedMetadata);
             return CacheLookupResult.hit(decoded, refreshedMetadata);
         } catch (RuntimeException | IOException exception) {
@@ -92,13 +90,12 @@ public final class VersionedCacheStore {
 
     public <T> CacheEntryMetadata write(
             CacheModuleId module,
-            String fingerprint,
-            String configDigest,
+            String dependencyDigest,
             String entryKey,
             CachePayloadCodec<T> codec,
             T value) throws IOException {
-        Path metaPath = metaPath(module, fingerprint, entryKey);
-        Path dataPath = dataPath(module, fingerprint, entryKey);
+        Path metaPath = metaPath(module, dependencyDigest, entryKey);
+        Path dataPath = dataPath(module, dependencyDigest, entryKey);
         Files.createDirectories(dataPath.getParent());
 
         String payload = GSON.toJson(codec.encode(value));
@@ -107,14 +104,13 @@ public final class VersionedCacheStore {
         long sizeBytes = payload.getBytes(StandardCharsets.UTF_8).length;
         CacheEntryMetadata metadata = new CacheEntryMetadata(
                 schemaVersion,
-                fingerprint,
+                dependencyDigest,
                 codec.entryType(),
                 checksum,
                 now,
                 now,
                 sizeBytes,
-                IntegrityState.VALID,
-                configDigest);
+                IntegrityState.VALID);
 
         atomicWriteString(dataPath, payload);
         writeMetadata(metaPath, metadata);
@@ -203,28 +199,26 @@ public final class VersionedCacheStore {
     private void writeMetadata(Path path, CacheEntryMetadata metadata) throws IOException {
         JsonObject json = new JsonObject();
         json.addProperty("schemaVersion", metadata.schemaVersion());
-        json.addProperty("fingerprint", metadata.fingerprint());
+        json.addProperty("dependencyDigest", metadata.dependencyDigest());
         json.addProperty("entryType", metadata.entryType());
         json.addProperty("checksum", metadata.checksum());
         json.addProperty("createdAtEpochMillis", metadata.createdAtEpochMillis());
         json.addProperty("lastUsedAtEpochMillis", metadata.lastUsedAtEpochMillis());
         json.addProperty("sizeBytes", metadata.sizeBytes());
         json.addProperty("integrityState", metadata.integrityState().name());
-        json.addProperty("configDigest", metadata.configDigest());
         atomicWriteString(path, GSON.toJson(json));
     }
 
     private CacheEntryMetadata metadataFromJson(JsonObject json) {
         return new CacheEntryMetadata(
                 json.get("schemaVersion").getAsInt(),
-                json.get("fingerprint").getAsString(),
+                json.has("dependencyDigest") ? json.get("dependencyDigest").getAsString() : json.get("fingerprint").getAsString(),
                 json.get("entryType").getAsString(),
                 json.get("checksum").getAsString(),
                 json.get("createdAtEpochMillis").getAsLong(),
                 json.get("lastUsedAtEpochMillis").getAsLong(),
                 json.get("sizeBytes").getAsLong(),
-                IntegrityState.valueOf(json.get("integrityState").getAsString()),
-                json.has("configDigest") ? json.get("configDigest").getAsString() : "");
+                IntegrityState.valueOf(json.get("integrityState").getAsString()));
     }
 
     private CacheEntryMetadata readMetadataQuietly(Path path) {
@@ -242,14 +236,13 @@ public final class VersionedCacheStore {
     private CacheEntryMetadata withIntegrityState(CacheEntryMetadata metadata, IntegrityState integrityState) {
         return new CacheEntryMetadata(
                 metadata.schemaVersion(),
-                metadata.fingerprint(),
+                metadata.dependencyDigest(),
                 metadata.entryType(),
                 metadata.checksum(),
                 metadata.createdAtEpochMillis(),
                 metadata.lastUsedAtEpochMillis(),
                 metadata.sizeBytes(),
-                integrityState,
-                metadata.configDigest());
+                integrityState);
     }
 
     private void discardEntry(Path metaPath, Path dataPath) {
@@ -271,16 +264,16 @@ public final class VersionedCacheStore {
         return schemaRoot().resolve(module.id());
     }
 
-    private Path fingerprintPath(CacheModuleId module, String fingerprint) {
-        return modulePath(module).resolve(fingerprint);
+    private Path fingerprintPath(CacheModuleId module, String dependencyDigest) {
+        return modulePath(module).resolve(dependencyDigest);
     }
 
-    private Path metaPath(CacheModuleId module, String fingerprint, String entryKey) {
-        return fingerprintPath(module, fingerprint).resolve(entryKey + ".meta.json");
+    private Path metaPath(CacheModuleId module, String dependencyDigest, String entryKey) {
+        return fingerprintPath(module, dependencyDigest).resolve(entryKey + ".meta.json");
     }
 
-    private Path dataPath(CacheModuleId module, String fingerprint, String entryKey) {
-        return fingerprintPath(module, fingerprint).resolve(entryKey + ".data.json");
+    private Path dataPath(CacheModuleId module, String dependencyDigest, String entryKey) {
+        return fingerprintPath(module, dependencyDigest).resolve(entryKey + ".data.json");
     }
 
     private Path schemaRoot() {
