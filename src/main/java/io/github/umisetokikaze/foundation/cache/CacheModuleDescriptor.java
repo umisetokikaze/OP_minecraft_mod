@@ -26,7 +26,17 @@ public record CacheModuleDescriptor(
                     true,
                     true,
                     true,
-                    Set.of("compatibilityMode", "relevantFingerprintPaths")),
+                    Set.of(
+                            "compatibilityMode",
+                            "cacheDebugLogging",
+                            "cacheMaxMiB",
+                            "evictionPolicy",
+                            "cacheResourceIndexEnabled",
+                            "cacheResourceIndexMaxMiB",
+                            "cacheResourceIndexEvictionPolicy",
+                            "cacheResourceIndexDebugLogging",
+                            "cacheResourceIndexCompatibilityMode",
+                            "relevantFingerprintPaths")),
             CacheModuleId.NEGATIVE_LOOKUP,
             new CacheModuleDescriptor(
                     CacheModuleId.NEGATIVE_LOOKUP,
@@ -34,7 +44,17 @@ public record CacheModuleDescriptor(
                     true,
                     true,
                     true,
-                    Set.of("compatibilityMode", "relevantFingerprintPaths")));
+                    Set.of(
+                            "compatibilityMode",
+                            "cacheDebugLogging",
+                            "cacheMaxMiB",
+                            "evictionPolicy",
+                            "cacheNegativeLookupEnabled",
+                            "cacheNegativeLookupMaxMiB",
+                            "cacheNegativeLookupEvictionPolicy",
+                            "cacheNegativeLookupDebugLogging",
+                            "cacheNegativeLookupCompatibilityMode",
+                            "relevantFingerprintPaths")));
 
     public static CacheModuleDescriptor forModule(CacheModuleId module) {
         return DEFAULTS.get(module);

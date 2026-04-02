@@ -4,6 +4,7 @@ import io.github.umisetokikaze.foundation.PackFingerprintSnapshot;
 import io.github.umisetokikaze.foundation.PackFingerprintService;
 import io.github.umisetokikaze.foundation.ProfilingFoundation;
 import io.github.umisetokikaze.foundation.StageHandle;
+import io.github.umisetokikaze.foundation.cache.CacheModuleId;
 import io.github.umisetokikaze.foundation.cache.CacheResolution;
 import io.github.umisetokikaze.foundation.cache.CacheResolver;
 import io.github.umisetokikaze.foundation.cache.ResourceIndexCacheController;
@@ -47,13 +48,13 @@ final class ClientFoundationReloadListener extends SimplePreparableReloadListene
                     "foundation.cache.resource_index.snapshot",
                     observation.resourceIndexBundle().resourceIndex().fileExistenceMap().size(),
                     observation.resourceIndexBundle().resourceIndex().pathIndex().size(),
-                    io.github.umisetokikaze.Config.CACHE_MAX_MIB.get());
+                    foundation.getSafeCacheLayer().effectiveBudgetMiB(CacheModuleId.RESOURCE_INDEX));
             foundation.recordCacheUsage(
                     observation.snapshot(),
                     "foundation.cache.negative_lookup.snapshot",
                     observation.resourceIndexBundle().negativeLookup().existingResources().size(),
                     observation.resourceIndexBundle().negativeLookup().namespaceIndex().size(),
-                    io.github.umisetokikaze.Config.CACHE_MAX_MIB.get());
+                    foundation.getSafeCacheLayer().effectiveBudgetMiB(CacheModuleId.NEGATIVE_LOOKUP));
             foundation.recordReloadObservation(observation.namespaceCount(), durationNanos);
             foundation.finishReloadSession(
                     reloadSession,

@@ -3,10 +3,7 @@ package io.github.umisetokikaze.foundation.cache;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.Map;
-import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -22,7 +19,7 @@ class VersionedCacheStoreTest {
     @Test
     void roundTripsResourceIndexMetadataAndPayload() throws Exception {
         VersionedCacheStore store = new VersionedCacheStore(tempDir, 1);
-        ResourceIndexSnapshot snapshot = sampleResourceIndexSnapshot();
+        ResourceIndexSnapshot snapshot = VersionedCacheStoreFixtures.sampleResourceIndexSnapshot();
 
         store.write(CacheModuleId.RESOURCE_INDEX, "dep1", "entry", ResourceIndexSnapshot.codec(), snapshot);
 
@@ -44,7 +41,7 @@ class VersionedCacheStoreTest {
     @Test
     void roundTripsNegativeLookupWithDedicatedEntryType() throws Exception {
         VersionedCacheStore store = new VersionedCacheStore(tempDir, 1);
-        NegativeLookupSnapshot snapshot = sampleNegativeLookupSnapshot();
+        NegativeLookupSnapshot snapshot = VersionedCacheStoreFixtures.sampleNegativeLookupSnapshot();
 
         store.write(CacheModuleId.NEGATIVE_LOOKUP, "dep1", "entry", NegativeLookupSnapshot.codec(), snapshot);
 
@@ -63,8 +60,8 @@ class VersionedCacheStoreTest {
     @Test
     void checksumMismatchInvalidatesSingleEntry() throws Exception {
         VersionedCacheStore store = new VersionedCacheStore(tempDir, 1);
-        store.write(CacheModuleId.RESOURCE_INDEX, "dep1", "good", ResourceIndexSnapshot.codec(), sampleResourceIndexSnapshot());
-        store.write(CacheModuleId.RESOURCE_INDEX, "dep1", "bad", ResourceIndexSnapshot.codec(), sampleResourceIndexSnapshot("example:item/b.json"));
+        store.write(CacheModuleId.RESOURCE_INDEX, "dep1", "good", ResourceIndexSnapshot.codec(), VersionedCacheStoreFixtures.sampleResourceIndexSnapshot());
+        store.write(CacheModuleId.RESOURCE_INDEX, "dep1", "bad", ResourceIndexSnapshot.codec(), VersionedCacheStoreFixtures.sampleResourceIndexSnapshot("example:item/b.json"));
 
         Path fingerprintDir = tempDir.resolve("schema-v1").resolve("resource_index").resolve("dep1");
         Files.writeString(
@@ -95,7 +92,7 @@ class VersionedCacheStoreTest {
     @Test
     void entryTypeMismatchDiscardsSingleEntry() throws Exception {
         VersionedCacheStore store = new VersionedCacheStore(tempDir, 1);
-        store.write(CacheModuleId.RESOURCE_INDEX, "dep1", "typed", ResourceIndexSnapshot.codec(), sampleResourceIndexSnapshot());
+        store.write(CacheModuleId.RESOURCE_INDEX, "dep1", "typed", ResourceIndexSnapshot.codec(), VersionedCacheStoreFixtures.sampleResourceIndexSnapshot());
 
         CacheLookupResult<NegativeLookupSnapshot> result = store.read(
                 CacheModuleId.RESOURCE_INDEX,
@@ -115,7 +112,7 @@ class VersionedCacheStoreTest {
     @Test
     void fingerprintMismatchDiscardsSingleEntry() throws Exception {
         VersionedCacheStore store = new VersionedCacheStore(tempDir, 1);
-        store.write(CacheModuleId.RESOURCE_INDEX, "dep1", "entry", ResourceIndexSnapshot.codec(), sampleResourceIndexSnapshot());
+        store.write(CacheModuleId.RESOURCE_INDEX, "dep1", "entry", ResourceIndexSnapshot.codec(), VersionedCacheStoreFixtures.sampleResourceIndexSnapshot());
 
         Path fingerprintDir = tempDir.resolve("schema-v1").resolve("resource_index").resolve("dep1");
         Path metaPath = fingerprintDir.resolve("entry.meta.json");
@@ -144,7 +141,7 @@ class VersionedCacheStoreTest {
                 "dep1",
                 "entry",
                 ResourceIndexSnapshot.codec(),
-                sampleResourceIndexSnapshot());
+                VersionedCacheStoreFixtures.sampleResourceIndexSnapshot());
 
         Thread.sleep(5L);
 
@@ -162,9 +159,9 @@ class VersionedCacheStoreTest {
     @Test
     void evictsLeastRecentlyUsedEntriesWhenBudgetExceeded() throws Exception {
         VersionedCacheStore store = new VersionedCacheStore(tempDir, 1);
-        store.write(CacheModuleId.RESOURCE_INDEX, "dep1", "first", ResourceIndexSnapshot.codec(), sampleResourceIndexSnapshot());
+        store.write(CacheModuleId.RESOURCE_INDEX, "dep1", "first", ResourceIndexSnapshot.codec(), VersionedCacheStoreFixtures.sampleResourceIndexSnapshot());
         Thread.sleep(5L);
-        store.write(CacheModuleId.RESOURCE_INDEX, "dep1", "second", ResourceIndexSnapshot.codec(), sampleResourceIndexSnapshot("example:item/very_large_name_that_pushes_budget.json"));
+        store.write(CacheModuleId.RESOURCE_INDEX, "dep1", "second", ResourceIndexSnapshot.codec(), VersionedCacheStoreFixtures.sampleResourceIndexSnapshot("example:item/very_large_name_that_pushes_budget.json"));
 
         long targetBudget = 10L;
         var evicted = store.evictLeastRecentlyUsed(targetBudget, java.util.Optional.of(CacheModuleId.RESOURCE_INDEX));
@@ -173,25 +170,17 @@ class VersionedCacheStoreTest {
         assertTrue(evicted.get(0).contains("resource_index"));
     }
 
-    private static ResourceIndexSnapshot sampleResourceIndexSnapshot() {
-        return sampleResourceIndexSnapshot("example:item/a.json");
-    }
+    @Test
+    void aggregatesUsagePerDependencyDigest() throws Exception {
+        VersionedCacheStore store = new VersionedCacheStore(tempDir, 1);
+        store.write(CacheModuleId.RESOURCE_INDEX, "dep1", "entry-a", ResourceIndexSnapshot.codec(), VersionedCacheStoreFixtures.sampleResourceIndexSnapshot());
+        store.write(CacheModuleId.RESOURCE_INDEX, "dep2", "entry-b", ResourceIndexSnapshot.codec(), VersionedCacheStoreFixtures.sampleResourceIndexSnapshot("example:item/b.json"));
 
-    private static ResourceIndexSnapshot sampleResourceIndexSnapshot(String lookupKey) {
-        Map<String, Set<String>> pathIndex = new LinkedHashMap<>();
-        pathIndex.put("example", new LinkedHashSet<>(Set.of("models/item/a.json")));
-        return new ResourceIndexSnapshot(
-                Set.of("example"),
-                pathIndex,
-                Set.of(lookupKey),
-                Map.of(lookupKey, "vanilla"),
-                "packs");
-    }
+        Map<String, VersionedCacheStore.UsageStats> usage = store.usageByDependencyDigest(CacheModuleId.RESOURCE_INDEX);
 
-    private static NegativeLookupSnapshot sampleNegativeLookupSnapshot() {
-        return new NegativeLookupSnapshot(
-                Set.of("example"),
-                Set.of("example:models/item/a.json"),
-                "packs");
+        assertEquals(2, usage.size());
+        assertTrue(usage.containsKey("dep1"));
+        assertTrue(usage.containsKey("dep2"));
+        assertEquals(1L, usage.get("dep1").entryCount());
     }
 }

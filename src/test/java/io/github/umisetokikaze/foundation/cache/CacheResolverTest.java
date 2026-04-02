@@ -35,6 +35,25 @@ class CacheResolverTest {
         assertEquals(InvalidationReason.RELEVANT_FILES_CHANGED, resolution.resolutionFor(CacheModuleId.RESOURCE_INDEX).primaryReason());
     }
 
+    @Test
+    void invalidatesOnlyTargetModuleWhenModuleSpecificSettingChanges() {
+        CacheResolver resolver = new CacheResolver();
+
+        CacheResolution resolution = resolver.resolve(
+                sampleSnapshot(Map.of(
+                        "compatibilityMode", "standard",
+                        "cacheResourceIndexCompatibilityMode", "inherit",
+                        "cacheNegativeLookupCompatibilityMode", "inherit"), Map.of("assets/example/models/item/a.json", "1111")),
+                sampleSnapshot(Map.of(
+                        "compatibilityMode", "standard",
+                        "cacheResourceIndexCompatibilityMode", "safe",
+                        "cacheNegativeLookupCompatibilityMode", "inherit"), Map.of("assets/example/models/item/a.json", "1111")));
+
+        assertFalse(resolution.resolutionFor(CacheModuleId.RESOURCE_INDEX).reuseAllowed());
+        assertTrue(resolution.resolutionFor(CacheModuleId.NEGATIVE_LOOKUP).reuseAllowed());
+        assertEquals(InvalidationReason.SETTINGS_CHANGED, resolution.resolutionFor(CacheModuleId.RESOURCE_INDEX).primaryReason());
+    }
+
     private PackFingerprintSnapshot sampleSnapshot(Map<String, String> settings, Map<String, String> relevantFiles) {
         JsonObject mod = new JsonObject();
         mod.addProperty("modId", "example");
