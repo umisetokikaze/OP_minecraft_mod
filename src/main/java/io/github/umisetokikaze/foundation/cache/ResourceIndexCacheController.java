@@ -22,22 +22,45 @@ public final class ResourceIndexCacheController {
         this.cacheLayer = cacheLayer;
     }
 
-    public ResourceIndexSnapshot loadOrBuild(PackFingerprintSnapshot snapshot, ResourceManager resourceManager) {
+    public ResourceIndexSnapshot loadOrBuild(PackFingerprintSnapshot snapshot, CacheResolution resolution, ResourceManager resourceManager) {
+        ModuleCacheResolution resourceIndexResolution = resolution.resolutionFor(CacheModuleId.RESOURCE_INDEX);
         CachePayloadCodec<ResourceIndexSnapshot> resourceIndexCodec = ResourceIndexSnapshot.codec("resource_index");
-        CacheLookupResult<ResourceIndexSnapshot> resourceIndexResult = cacheLayer.read(
-                snapshot,
-                CacheModuleId.RESOURCE_INDEX,
-                RESOURCE_INDEX_ENTRY,
-                resourceIndexCodec);
-        if (resourceIndexResult.hit() && resourceIndexResult.value() != null) {
-            foundation.beginStage("foundation.cache.resource_index.warm").close();
-            return resourceIndexResult.value();
+        if (resourceIndexResolution.reuseAllowed()) {
+            CacheLookupResult<ResourceIndexSnapshot> resourceIndexResult = cacheLayer.read(
+                    snapshot,
+                    CacheModuleId.RESOURCE_INDEX,
+                    resourceIndexResolution.dependencyDigest(),
+                    RESOURCE_INDEX_ENTRY,
+                    resourceIndexCodec);
+            if (resourceIndexResult.hit() && resourceIndexResult.value() != null) {
+                foundation.beginStage("foundation.cache.resource_index.warm").close();
+                return resourceIndexResult.value();
+            }
+        } else {
+            foundation.recordInvalidation(
+                    snapshot,
+                    CacheModuleId.RESOURCE_INDEX.id(),
+                    resourceIndexResolution.primaryReason().name(),
+                    resourceIndexResolution.reasonDetail());
         }
 
         ResourceIndexSnapshot built = buildSnapshot(snapshot, resourceManager);
         if (Config.CACHE_REBUILD_ON_MISS.get()) {
-            cacheLayer.write(snapshot, CacheModuleId.RESOURCE_INDEX, RESOURCE_INDEX_ENTRY, resourceIndexCodec, built);
-            cacheLayer.write(snapshot, CacheModuleId.NEGATIVE_LOOKUP, NEGATIVE_LOOKUP_ENTRY, ResourceIndexSnapshot.codec("negative_lookup"), built);
+            cacheLayer.write(
+                    snapshot,
+                    CacheModuleId.RESOURCE_INDEX,
+                    resourceIndexResolution.dependencyDigest(),
+                    RESOURCE_INDEX_ENTRY,
+                    resourceIndexCodec,
+                    built);
+            ModuleCacheResolution negativeLookupResolution = resolution.resolutionFor(CacheModuleId.NEGATIVE_LOOKUP);
+            cacheLayer.write(
+                    snapshot,
+                    CacheModuleId.NEGATIVE_LOOKUP,
+                    negativeLookupResolution.dependencyDigest(),
+                    NEGATIVE_LOOKUP_ENTRY,
+                    ResourceIndexSnapshot.codec("negative_lookup"),
+                    built);
         }
         return built;
     }

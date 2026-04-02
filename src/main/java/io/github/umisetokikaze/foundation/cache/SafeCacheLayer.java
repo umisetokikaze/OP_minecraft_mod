@@ -44,6 +44,7 @@ public final class SafeCacheLayer {
     public <T> CacheLookupResult<T> read(
             PackFingerprintSnapshot snapshot,
             CacheModuleId module,
+            String dependencyDigest,
             String entryKey,
             CachePayloadCodec<T> codec) {
         if (!isGlobalEnabled()) {
@@ -59,7 +60,7 @@ public final class SafeCacheLayer {
             return miss(snapshot, module, InvalidationReason.REBUILD_REQUESTED, "manual-rebuild");
         }
 
-        CacheLookupResult<T> result = store.read(module, snapshot.fingerprint(), snapshot.configInputsDigest(), stableEntryKey(entryKey), codec);
+        CacheLookupResult<T> result = store.read(module, dependencyDigest, stableEntryKey(entryKey), codec);
         note(snapshot, module, result.reason(), result.detail(), result.hit());
         if (!result.hit() && result.reason() == InvalidationReason.DESERIALIZE_FAILED) {
             quarantine(snapshot, module, "DESERIALIZE_FAILED", result.detail());
@@ -71,6 +72,7 @@ public final class SafeCacheLayer {
     public <T> void write(
             PackFingerprintSnapshot snapshot,
             CacheModuleId module,
+            String dependencyDigest,
             String entryKey,
             CachePayloadCodec<T> codec,
             T value) {
@@ -78,7 +80,7 @@ public final class SafeCacheLayer {
             return;
         }
         try {
-            store.write(module, snapshot.fingerprint(), snapshot.configInputsDigest(), stableEntryKey(entryKey), codec, value);
+            store.write(module, dependencyDigest, stableEntryKey(entryKey), codec, value);
             rebuildRequested.remove(module);
             note(snapshot, module, InvalidationReason.HIT, "write", true);
             evictIfNeeded();

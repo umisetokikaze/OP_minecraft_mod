@@ -25,7 +25,10 @@ class PackFingerprintSnapshotTest {
                 "21.1.122",
                 List.of(mod),
                 List.of(pack),
-                Map.of("cache.enabled", "true"));
+                Map.of("assets/example/models/item/a.json", "hash123"),
+                Map.of("cache.enabled", "true"),
+                Map.of("resource_index", 1),
+                "cfg123");
 
         JsonObject json = snapshot.toJson();
 
@@ -35,7 +38,10 @@ class PackFingerprintSnapshotTest {
         assertEquals("21.1.122", json.get("neoForgeVersion").getAsString());
         assertEquals("example", json.getAsJsonArray("mods").get(0).getAsJsonObject().get("modId").getAsString());
         assertEquals("vanilla", json.getAsJsonArray("resourcePacks").get(0).getAsJsonObject().get("id").getAsString());
+        assertEquals("hash123", json.getAsJsonObject("relevantFileHashes").get("assets/example/models/item/a.json").getAsString());
         assertEquals("true", json.getAsJsonObject("configInputs").get("cache.enabled").getAsString());
-        assertEquals("phase1-pack-level-only", json.get("relevantFileHashMode").getAsString());
+        assertEquals(1, json.getAsJsonObject("cacheSchemaVersions").get("resource_index").getAsInt());
+        assertEquals("resource-manager-assets", json.get("relevantFileHashMode").getAsString());
+        assertEquals("cfg123", json.get("configInputsDigest").getAsString());
     }
 }

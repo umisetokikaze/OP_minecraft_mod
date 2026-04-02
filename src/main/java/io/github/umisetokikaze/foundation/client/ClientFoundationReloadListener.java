@@ -1,8 +1,11 @@
 package io.github.umisetokikaze.foundation.client;
 
 import io.github.umisetokikaze.foundation.PackFingerprintSnapshot;
+import io.github.umisetokikaze.foundation.PackFingerprintService;
 import io.github.umisetokikaze.foundation.ProfilingFoundation;
 import io.github.umisetokikaze.foundation.StageHandle;
+import io.github.umisetokikaze.foundation.cache.CacheResolution;
+import io.github.umisetokikaze.foundation.cache.CacheResolver;
 import io.github.umisetokikaze.foundation.cache.ResourceIndexCacheController;
 import io.github.umisetokikaze.foundation.cache.ResourceIndexSnapshot;
 
@@ -25,9 +28,13 @@ final class ClientFoundationReloadListener extends SimplePreparableReloadListene
     protected ReloadObservation prepare(ResourceManager resourceManager, ProfilerFiller profiler) {
         reloadSession = foundation.beginReloadSession();
         try (var ignored = foundation.beginStage("foundation.client_reload.prepare")) {
-            PackFingerprintSnapshot snapshot = foundation.updateFingerprint(foundation.createFingerprintService().capture());
-            ResourceIndexSnapshot resourceIndexSnapshot = cacheController.loadOrBuild(snapshot, resourceManager);
-            return new ReloadObservation(resourceManager.getNamespaces().size(), System.nanoTime(), snapshot, resourceIndexSnapshot);
+            PackFingerprintService fingerprintService = foundation.createFingerprintService();
+            PackFingerprintSnapshot previousSnapshot = fingerprintService.loadLatestSnapshot().orElse(null);
+            PackFingerprintSnapshot snapshot = foundation.updateFingerprint(fingerprintService.capture(resourceManager));
+            CacheResolution resolution = new CacheResolver().resolve(previousSnapshot, snapshot);
+            foundation.updateCacheResolution(resolution);
+            ResourceIndexSnapshot resourceIndexSnapshot = cacheController.loadOrBuild(snapshot, resolution, resourceManager);
+            return new ReloadObservation(resourceManager.getNamespaces().size(), System.nanoTime(), snapshot, resolution, resourceIndexSnapshot);
         }
     }
 
@@ -55,6 +62,7 @@ final class ClientFoundationReloadListener extends SimplePreparableReloadListene
             int namespaceCount,
             long startedAtNanos,
             PackFingerprintSnapshot snapshot,
+            CacheResolution resolution,
             ResourceIndexSnapshot resourceIndexSnapshot) {
     }
 }

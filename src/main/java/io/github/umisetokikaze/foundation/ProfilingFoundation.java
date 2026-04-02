@@ -2,6 +2,9 @@ package io.github.umisetokikaze.foundation;
 
 import com.google.gson.JsonObject;
 import io.github.umisetokikaze.Config;
+import io.github.umisetokikaze.foundation.cache.CacheModuleId;
+import io.github.umisetokikaze.foundation.cache.CacheResolution;
+import io.github.umisetokikaze.foundation.cache.ModuleCacheResolution;
 import io.github.umisetokikaze.foundation.cache.SafeCacheLayer;
 import io.github.umisetokikaze.momooptimizer;
 import java.io.IOException;
@@ -23,6 +26,7 @@ public final class ProfilingFoundation {
     private final SafeCacheLayer safeCacheLayer = new SafeCacheLayer(this, rootDirectory.resolve("cache"));
 
     private volatile PackFingerprintSnapshot currentFingerprint;
+    private volatile CacheResolution currentCacheResolution;
 
     public static ProfilingFoundation getInstance() {
         return INSTANCE;
@@ -129,6 +133,11 @@ public final class ProfilingFoundation {
 
     public PackFingerprintSnapshot currentFingerprint() {
         return currentFingerprint;
+    }
+
+    public void updateCacheResolution(CacheResolution resolution) {
+        this.currentCacheResolution = resolution;
+        emitDiagnostics();
     }
 
     public Path benchmarkDirectory() {
@@ -274,6 +283,10 @@ public final class ProfilingFoundation {
             return;
         }
         JsonObject statsJson = stats.toJson();
+        CacheResolution resolution = currentCacheResolution;
+        if (resolution != null) {
+            statsJson.add("cacheResolution", cacheResolutionToJson(resolution));
+        }
         benchmarkHarness.recordSnapshot(snapshot, statsJson);
         momooptimizer.LOGGER.info(
                 "Foundation snapshot fingerprint={} warmCold={} stageCount={} cacheModuleCount={} quarantinedModuleCount={}",
@@ -309,6 +322,28 @@ public final class ProfilingFoundation {
             }
         }
         return active;
+    }
+
+    private JsonObject cacheResolutionToJson(CacheResolution resolution) {
+        JsonObject json = new JsonObject();
+        com.google.gson.JsonArray changedInputs = new com.google.gson.JsonArray();
+        resolution.changedInputs().stream().map(Enum::name).forEach(changedInputs::add);
+        json.add("changedInputs", changedInputs);
+
+        com.google.gson.JsonArray modules = new com.google.gson.JsonArray();
+        for (CacheModuleId module : CacheModuleId.values()) {
+            ModuleCacheResolution moduleResolution = resolution.resolutionFor(module);
+            JsonObject moduleJson = new JsonObject();
+            moduleJson.addProperty("module", module.id());
+            moduleJson.addProperty("dependencyDigest", moduleResolution.dependencyDigest());
+            moduleJson.addProperty("reuseAllowed", moduleResolution.reuseAllowed());
+            com.google.gson.JsonArray reasons = new com.google.gson.JsonArray();
+            moduleResolution.invalidationReasons().stream().map(Enum::name).forEach(reasons::add);
+            moduleJson.add("reasons", reasons);
+            modules.add(moduleJson);
+        }
+        json.add("modules", modules);
+        return json;
     }
 
     private long measureDirectory(Path path) {
