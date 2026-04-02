@@ -27,7 +27,13 @@ class PackFingerprintSnapshotTest {
                 List.of(pack),
                 Map.of("assets/example/models/item/a.json", "hash123"),
                 Map.of("cache.enabled", "true"),
-                Map.of("resource_index", 2, "negative_lookup", 2),
+                Map.of(
+                        "resource_index", 2,
+                        "negative_lookup", 2,
+                        "model_json_parse", 1,
+                        "model_parent_graph", 1,
+                        "blockstate_expansion", 1,
+                        "atlas_plan", 1),
                 "cfg123");
 
         JsonObject json = snapshot.toJson();
@@ -41,6 +47,7 @@ class PackFingerprintSnapshotTest {
         assertEquals("hash123", json.getAsJsonObject("relevantFileHashes").get("assets/example/models/item/a.json").getAsString());
         assertEquals("true", json.getAsJsonObject("configInputs").get("cache.enabled").getAsString());
         assertEquals(2, json.getAsJsonObject("cacheSchemaVersions").get("resource_index").getAsInt());
+        assertEquals(1, json.getAsJsonObject("cacheSchemaVersions").get("atlas_plan").getAsInt());
         assertEquals("resource-manager-assets", json.get("relevantFileHashMode").getAsString());
         assertEquals("cfg123", json.get("configInputsDigest").getAsString());
     }

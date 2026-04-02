@@ -7,6 +7,8 @@ import io.github.umisetokikaze.foundation.StageHandle;
 import io.github.umisetokikaze.foundation.cache.CacheModuleId;
 import io.github.umisetokikaze.foundation.cache.CacheResolution;
 import io.github.umisetokikaze.foundation.cache.CacheResolver;
+import io.github.umisetokikaze.foundation.cache.ModelPipelineBundle;
+import io.github.umisetokikaze.foundation.cache.ModelPipelineCacheController;
 import io.github.umisetokikaze.foundation.cache.ResourceIndexCacheController;
 import io.github.umisetokikaze.foundation.cache.ResourceIndexBundle;
 
@@ -17,12 +19,14 @@ import net.minecraft.util.profiling.ProfilerFiller;
 final class ClientFoundationReloadListener extends SimplePreparableReloadListener<ClientFoundationReloadListener.ReloadObservation> {
     private final ProfilingFoundation foundation;
     private final ResourceIndexCacheController cacheController;
+    private final ModelPipelineCacheController modelPipelineCacheController;
     private StageHandle reloadSession = () -> {
     };
 
     ClientFoundationReloadListener(ProfilingFoundation foundation) {
         this.foundation = foundation;
         this.cacheController = new ResourceIndexCacheController(foundation, foundation.getSafeCacheLayer());
+        this.modelPipelineCacheController = new ModelPipelineCacheController(foundation, foundation.getSafeCacheLayer());
     }
 
     @Override
@@ -35,7 +39,8 @@ final class ClientFoundationReloadListener extends SimplePreparableReloadListene
             CacheResolution resolution = new CacheResolver().resolve(previousSnapshot, snapshot);
             foundation.updateCacheResolution(resolution);
             ResourceIndexBundle resourceIndexBundle = cacheController.loadOrBuild(snapshot, resolution, resourceManager);
-            return new ReloadObservation(resourceManager.getNamespaces().size(), System.nanoTime(), snapshot, resolution, resourceIndexBundle);
+            ModelPipelineBundle modelPipelineBundle = modelPipelineCacheController.loadOrBuild(snapshot, resolution, resourceIndexBundle, resourceManager);
+            return new ReloadObservation(resourceManager.getNamespaces().size(), System.nanoTime(), snapshot, resolution, resourceIndexBundle, modelPipelineBundle);
         }
     }
 
@@ -55,6 +60,30 @@ final class ClientFoundationReloadListener extends SimplePreparableReloadListene
                     observation.resourceIndexBundle().negativeLookup().existingResources().size(),
                     observation.resourceIndexBundle().negativeLookup().namespaceIndex().size(),
                     foundation.getSafeCacheLayer().effectiveBudgetMiB(CacheModuleId.NEGATIVE_LOOKUP));
+            foundation.recordCacheUsage(
+                    observation.snapshot(),
+                    "foundation.cache.model_json_parse.snapshot",
+                    observation.modelPipelineBundle().modelJsonParse().modelsById().size(),
+                    observation.modelPipelineBundle().modelJsonParse().customLoaderModels().size(),
+                    foundation.getSafeCacheLayer().effectiveBudgetMiB(CacheModuleId.MODEL_JSON_PARSE));
+            foundation.recordCacheUsage(
+                    observation.snapshot(),
+                    "foundation.cache.model_parent_graph.snapshot",
+                    observation.modelPipelineBundle().modelParentGraph().inheritanceChainByModel().size(),
+                    observation.modelPipelineBundle().modelParentGraph().unresolvedModels().size(),
+                    foundation.getSafeCacheLayer().effectiveBudgetMiB(CacheModuleId.MODEL_PARENT_GRAPH));
+            foundation.recordCacheUsage(
+                    observation.snapshot(),
+                    "foundation.cache.blockstate_expansion.snapshot",
+                    observation.modelPipelineBundle().blockstateExpansion().totalVariantKeys(),
+                    observation.modelPipelineBundle().blockstateExpansion().totalMultipartCases(),
+                    foundation.getSafeCacheLayer().effectiveBudgetMiB(CacheModuleId.BLOCKSTATE_EXPANSION));
+            foundation.recordCacheUsage(
+                    observation.snapshot(),
+                    "foundation.cache.atlas_plan.snapshot",
+                    observation.modelPipelineBundle().atlasPlan().totalTextureDependencies(),
+                    observation.modelPipelineBundle().atlasPlan().atlasSources().size(),
+                    foundation.getSafeCacheLayer().effectiveBudgetMiB(CacheModuleId.ATLAS_PLAN));
             foundation.recordReloadObservation(observation.namespaceCount(), durationNanos);
             foundation.finishReloadSession(
                     reloadSession,
@@ -70,6 +99,7 @@ final class ClientFoundationReloadListener extends SimplePreparableReloadListene
             long startedAtNanos,
             PackFingerprintSnapshot snapshot,
             CacheResolution resolution,
-            ResourceIndexBundle resourceIndexBundle) {
+            ResourceIndexBundle resourceIndexBundle,
+            ModelPipelineBundle modelPipelineBundle) {
     }
 }
