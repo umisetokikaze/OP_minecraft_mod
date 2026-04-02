@@ -10,42 +10,54 @@ import java.util.Map;
 import java.util.Set;
 
 public record ResourceIndexSnapshot(
-        Set<String> namespaces,
-        Map<String, Set<String>> pathsByNamespace,
-        Set<String> existenceSet,
-        Set<String> negativeLookupSet,
+        Set<String> namespaceIndex,
+        Map<String, Set<String>> pathIndex,
+        Set<String> fileExistenceMap,
+        Map<String, String> winnerOriginIndex,
         String sourcePackOrderDigest) {
 
     public ResourceIndexSnapshot {
-        namespaces = Set.copyOf(namespaces);
-        LinkedHashMap<String, Set<String>> normalized = new LinkedHashMap<>();
-        pathsByNamespace.forEach((namespace, paths) -> normalized.put(namespace, Set.copyOf(paths)));
-        pathsByNamespace = Map.copyOf(normalized);
-        existenceSet = Set.copyOf(existenceSet);
-        negativeLookupSet = Set.copyOf(negativeLookupSet);
+        namespaceIndex = Set.copyOf(namespaceIndex);
+        LinkedHashMap<String, Set<String>> normalizedPaths = new LinkedHashMap<>();
+        pathIndex.forEach((namespace, paths) -> normalizedPaths.put(namespace, Set.copyOf(paths)));
+        pathIndex = Map.copyOf(normalizedPaths);
+        fileExistenceMap = Set.copyOf(fileExistenceMap);
+        winnerOriginIndex = Map.copyOf(new LinkedHashMap<>(winnerOriginIndex));
+    }
+
+    public boolean hasNamespace(String namespace) {
+        return namespaceIndex.contains(namespace);
     }
 
     public boolean contains(String namespace, String path) {
-        return existenceSet.contains(namespace + ":" + path);
+        return fileExistenceMap.contains(toLookupKey(namespace, path));
     }
 
-    public boolean isKnownMissing(String namespace, String path) {
-        return negativeLookupSet.contains(namespace + ":" + path);
+    public Set<String> pathsForNamespace(String namespace) {
+        return pathIndex.getOrDefault(namespace, Set.of());
     }
 
-    public static CachePayloadCodec<ResourceIndexSnapshot> codec(String entryType) {
+    public String winnerOrigin(String namespace, String path) {
+        return winnerOriginIndex.getOrDefault(toLookupKey(namespace, path), "unknown");
+    }
+
+    public static CachePayloadCodec<ResourceIndexSnapshot> codec() {
         return new CachePayloadCodec<>() {
             @Override
             public JsonElement encode(ResourceIndexSnapshot value) {
                 JsonObject root = new JsonObject();
-                root.add("namespaces", toSortedArray(value.namespaces()));
+                root.add("namespaceIndex", toSortedArray(value.namespaceIndex()));
                 JsonObject paths = new JsonObject();
-                value.pathsByNamespace().entrySet().stream()
+                value.pathIndex().entrySet().stream()
                         .sorted(Map.Entry.comparingByKey())
                         .forEach(entry -> paths.add(entry.getKey(), toSortedArray(entry.getValue())));
-                root.add("pathsByNamespace", paths);
-                root.add("existenceSet", toSortedArray(value.existenceSet()));
-                root.add("negativeLookupSet", toSortedArray(value.negativeLookupSet()));
+                root.add("pathIndex", paths);
+                root.add("fileExistenceMap", toSortedArray(value.fileExistenceMap()));
+                JsonObject origins = new JsonObject();
+                value.winnerOriginIndex().entrySet().stream()
+                        .sorted(Map.Entry.comparingByKey())
+                        .forEach(entry -> origins.addProperty(entry.getKey(), entry.getValue()));
+                root.add("winnerOriginIndex", origins);
                 root.addProperty("sourcePackOrderDigest", value.sourcePackOrderDigest());
                 return root;
             }
@@ -53,23 +65,35 @@ public record ResourceIndexSnapshot(
             @Override
             public ResourceIndexSnapshot decode(JsonElement json) {
                 JsonObject root = json.getAsJsonObject();
-                Set<String> namespaces = toSet(root.getAsJsonArray("namespaces"));
-                Map<String, Set<String>> pathsByNamespace = new LinkedHashMap<>();
-                JsonObject paths = root.getAsJsonObject("pathsByNamespace");
+                Set<String> namespaceIndex = toSet(root.getAsJsonArray("namespaceIndex"));
+                Map<String, Set<String>> pathIndex = new LinkedHashMap<>();
+                JsonObject paths = root.getAsJsonObject("pathIndex");
                 for (String key : paths.keySet()) {
-                    pathsByNamespace.put(key, toSet(paths.getAsJsonArray(key)));
+                    pathIndex.put(key, toSet(paths.getAsJsonArray(key)));
                 }
-                Set<String> existenceSet = toSet(root.getAsJsonArray("existenceSet"));
-                Set<String> negativeLookupSet = toSet(root.getAsJsonArray("negativeLookupSet"));
-                String sourcePackOrderDigest = root.get("sourcePackOrderDigest").getAsString();
-                return new ResourceIndexSnapshot(namespaces, pathsByNamespace, existenceSet, negativeLookupSet, sourcePackOrderDigest);
+                Set<String> fileExistenceMap = toSet(root.getAsJsonArray("fileExistenceMap"));
+                Map<String, String> winnerOriginIndex = new LinkedHashMap<>();
+                JsonObject origins = root.getAsJsonObject("winnerOriginIndex");
+                for (String key : origins.keySet()) {
+                    winnerOriginIndex.put(key, origins.get(key).getAsString());
+                }
+                return new ResourceIndexSnapshot(
+                        namespaceIndex,
+                        pathIndex,
+                        fileExistenceMap,
+                        winnerOriginIndex,
+                        root.get("sourcePackOrderDigest").getAsString());
             }
 
             @Override
             public String entryType() {
-                return entryType;
+                return "resource_index";
             }
         };
+    }
+
+    static String toLookupKey(String namespace, String path) {
+        return namespace + ":" + path;
     }
 
     private static JsonArray toSortedArray(Set<String> values) {
